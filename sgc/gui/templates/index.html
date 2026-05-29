@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Skywin Ground Control Station</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <nav id="menubar">
+      <div class="menu-item"><span>File</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('New Mission')">New Mission</div>
+          <div onclick="menuAction('Open Mission')">Open Mission...</div>
+          <div onclick="menuAction('Save Mission')">Save Mission</div>
+          <div onclick="menuAction('Save Mission As')">Save Mission As...</div>
+          <hr/>
+          <div onclick="menuAction('Export Log')">Export Log...</div>
+          <hr/>
+          <div onclick="menuAction('Exit')">Exit</div>
+        </div>
+      </div>
+      <div class="menu-item"><span>Connect</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('Serial Port')">Serial Port...</div>
+          <div onclick="menuAction('TCP Client')">TCP Client...</div>
+          <div onclick="menuAction('TCP Server')">TCP Server...</div>
+          <div onclick="menuAction('UDP')">UDP...</div>
+          <hr/>
+          <div onclick="disconnectVehicle()">Disconnect</div>
+        </div>
+      </div>
+      <div class="menu-item"><span>Flight Plan</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('Mission Planner')">Mission Planner</div>
+          <div onclick="menuAction('Geo-Fence Editor')">Geo-Fence Editor</div>
+          <div onclick="menuAction('Rally Points')">Rally Points</div>
+        </div>
+      </div>
+      <div class="menu-item"><span>Config</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('Vehicle Setup')">Vehicle Setup</div>
+          <div onclick="menuAction('Parameter Editor')">Parameter Editor</div>
+          <div onclick="location.href='/params'">Full Parameter List</div>
+          <hr/>
+          <div onclick="menuAction('App Settings')">App Settings...</div>
+        </div>
+      </div>
+      <div class="menu-item"><span>Logs</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('Telemetry Logs')">Telemetry Logs</div>
+          <div onclick="menuAction('DataFlash Logs')">DataFlash Logs</div>
+          <hr/>
+          <div onclick="toggleConsole()">Console</div>
+        </div>
+      </div>
+      <div class="menu-item"><span>Help</span>
+        <div class="menu-dropdown">
+          <div onclick="menuAction('About')">About SGC</div>
+        </div>
+      </div>
+      <div class="menu-title">SGC - Skywin Ground Control Station</div>
+    </nav>
+
+    <div id="toolbar">
+      <span class="toolbar-label">Port:</span>
+      <select id="portSelect">
+        <option value="auto">Auto</option>
+      </select>
+      <span class="toolbar-label">Baud:</span>
+      <select id="baudSelect">
+        <option>9600</option>
+        <option>19200</option>
+        <option>38400</option>
+        <option selected>57600</option>
+        <option>115200</option>
+        <option>921600</option>
+      </select>
+      <button id="connectBtn" onclick="toggleConnection()">CONNECT</button>
+      <div class="toolbar-sep"></div>
+      <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
+      <span id="sysidInd" class="indicator">SysID: --</span>
+    </div>
+
+    <div id="main">
+      <div id="sidebar">
+        <div class="telemetry-group">
+          <div class="group-title">GPS</div>
+          <div class="group-content">
+            <div class="row"><span class="row-label">Lat</span><span class="row-value" id="t_lat">0.0000000</span><span class="row-unit">&deg;</span></div>
+            <div class="row"><span class="row-label">Lon</span><span class="row-value" id="t_lon">0.0000000</span><span class="row-unit">&deg;</span></div>
+            <div class="row"><span class="row-label">Alt</span><span class="row-value" id="t_alt">0.00</span><span class="row-unit">m</span></div>
+            <div class="row"><span class="row-label">Speed</span><span class="row-value" id="t_speed">0.00</span><span class="row-unit">m/s</span></div>
+            <div class="row"><span class="row-label">Heading</span><span class="row-value" id="t_heading">0.0</span><span class="row-unit">&deg;</span></div>
+          </div>
+        </div>
+        <div class="telemetry-group">
+          <div class="group-title">BATTERY</div>
+          <div class="group-content">
+            <div class="row"><span class="row-label">Voltage</span><span class="row-value" id="t_volt">0.00</span><span class="row-unit">V</span></div>
+            <div class="row"><span class="row-label">Current</span><span class="row-value" id="t_current">0.00</span><span class="row-unit">A</span></div>
+            <div class="row"><span class="row-label">Remaining</span><span class="row-value" id="t_batt_rem">0</span><span class="row-unit">%</span></div>
+            <div class="battery-bar"><div class="battery-fill" id="batteryFill" style="width:0%"></div><span class="battery-text">0%</span></div>
+          </div>
+        </div>
+        <div class="telemetry-group">
+          <div class="group-title">ATTITUDE</div>
+          <div class="group-content">
+            <div class="row"><span class="row-label">Roll</span><span class="row-value" id="t_roll">0.0</span><span class="row-unit">&deg;</span></div>
+            <div class="row"><span class="row-label">Pitch</span><span class="row-value" id="t_pitch">0.0</span><span class="row-unit">&deg;</span></div>
+            <div class="row"><span class="row-label">Yaw</span><span class="row-value" id="t_yaw">0.0</span><span class="row-unit">&deg;</span></div>
+            <canvas id="attitudeCanvas" width="220" height="60"></canvas>
+          </div>
+        </div>
+        <div class="telemetry-group">
+          <div class="group-title">STATUS</div>
+          <div class="group-content">
+            <div class="row"><span class="row-label">Mode</span><span class="row-value" id="t_mode">---</span></div>
+            <div class="row"><span class="row-label">Armed</span><span class="row-value" id="t_armed">No</span></div>
+            <div class="row"><span class="row-label">Sats</span><span class="row-value" id="t_sats">0</span></div>
+            <div class="row"><span class="row-label">Fix</span><span class="row-value" id="t_fix">No Fix</span></div>
+            <div class="row"><span class="row-label">HDOP</span><span class="row-value" id="t_hdop">0.00</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="map" class="map-container"></div>
+
+      <div id="actionPanel">
+        <div class="action-section">
+          <div class="action-title">FLIGHT MODE</div>
+          <select id="flightModeSelect">
+            <option>STABILIZE</option><option>ACRO</option><option>ALT_HOLD</option>
+            <option>AUTO</option><option selected>GUIDED</option><option>LOITER</option>
+            <option>RTL</option><option>CIRCLE</option><option>LAND</option>
+            <option>DRIFT</option><option>SPORT</option><option>FLIP</option>
+            <option>AUTOTUNE</option><option>POSHOLD</option><option>BRAKE</option>
+            <option>THROW</option><option>AVOID_ADSB</option><option>GUIDED_NOGPS</option>
+            <option>SMART_RTL</option><option>FLOWHOLD</option><option>FOLLOW</option>
+            <option>ZIGZAG</option><option>SYSTEM_ID</option><option>AUTOROTATE</option><option>AUTO_RTL</option>
+          </select>
+          <button class="action-btn" onclick="setMode()">SET MODE</button>
+        </div>
+        <div class="action-section">
+          <div class="action-title">VEHICLE CONTROL</div>
+          <div class="btn-row">
+            <button class="action-btn success" onclick="arm()">ARM</button>
+            <button class="action-btn danger" onclick="disarm()">DISARM</button>
+          </div>
+          <button class="action-btn warning" onclick="command('RTL')">RTL</button>
+          <button class="action-btn warning" onclick="command('LAND')">LAND</button>
+          <button class="action-btn" onclick="command('TAKEOFF')">TAKEOFF</button>
+        </div>
+        <div class="action-section">
+          <div class="action-title">VEHICLE INFO</div>
+          <div class="info-row"><span class="info-label">SysID:</span><span id="i_sysid">---</span></div>
+          <div class="info-row"><span class="info-label">CompID:</span><span id="i_compid">---</span></div>
+          <div class="info-row"><span class="info-label">Type:</span><span id="i_type">---</span></div>
+          <div class="info-row"><span class="info-label">Firmware:</span><span id="i_firmware">---</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="console" class="hidden">
+      <div class="console-header">CONSOLE</div>
+      <div id="consoleOutput"></div>
+    </div>
+
+    <div id="statusbar">
+      <span id="statusMessage">Ready &mdash; connect to a vehicle to begin</span>
+      <div class="status-right">
+        <span id="s_connection" class="status-indicator" style="color:#ef4444">&#9679; Disconnected</span>
+        <span class="status-sep"></span>
+        <span id="s_gps" class="status-indicator" style="color:#eab308">&#9679; GPS: No Fix</span>
+        <span class="status-sep"></span>
+        <span id="s_sats" class="status-indicator">&#9679; Sats: 0</span>
+        <span class="status-sep"></span>
+        <span id="s_mode" class="status-indicator">&#9679; Mode: ---</span>
+        <span class="status-sep"></span>
+        <span id="s_armed" class="status-indicator">&#9679; Disarmed</span>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

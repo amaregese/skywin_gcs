@@ -1,0 +1,211 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: #0f172a; color: #e2e8f0; overflow: hidden; height: 100vh;
+  user-select: none;
+}
+#consoleOutput { user-select: text; -webkit-user-select: text; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0f172a; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* Menu Bar */
+#menubar {
+  display: flex; align-items: center; background: #1e293b;
+  border-bottom: 1px solid #334155; padding: 0; height: 32px; flex-shrink: 0;
+}
+.menu-title {
+  margin-left: auto; padding-right: 16px; font-size: 12px; color: #475569;
+  font-weight: 500; letter-spacing: 0.5px;
+}
+.menu-item {
+  position: relative; padding: 6px 14px; cursor: pointer; font-size: 13px;
+  color: #e2e8f0; border-radius: 4px; margin: 2px;
+}
+.menu-item:hover { background: #334155; }
+.menu-dropdown {
+  display: none; position: absolute; top: 100%; left: 0; min-width: 220px;
+  background: #1e293b; border: 1px solid #334155; border-radius: 8px;
+  padding: 6px; z-index: 1000; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+.menu-item:hover .menu-dropdown { display: block; }
+.menu-dropdown div {
+  padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px;
+  color: #e2e8f0; transition: background 0.1s;
+}
+.menu-dropdown div:hover { background: #7c3aed; color: white; }
+.menu-dropdown hr { border: none; border-top: 1px solid #334155; margin: 4px 8px; }
+
+/* Toolbar */
+#toolbar {
+  display: flex; align-items: center; background: #1e293b; padding: 6px 12px;
+  border-bottom: 1px solid #334155; gap: 8px; flex-shrink: 0;
+}
+.toolbar-label { color: #94a3b8; font-size: 13px; }
+#toolbar select {
+  background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+  border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer;
+  outline: none;
+}
+#toolbar select:focus { border-color: #7c3aed; }
+#connectBtn {
+  background: #7c3aed; color: white; border: none; border-radius: 6px;
+  padding: 6px 20px; font-size: 13px; font-weight: 700; cursor: pointer;
+  letter-spacing: 0.5px; transition: background 0.15s;
+}
+#connectBtn:hover { background: #6d28d9; }
+#connectBtn.connected { background: #ef4444; }
+#connectBtn.connected:hover { background: #dc2626; }
+.toolbar-sep { width: 1px; height: 24px; background: #334155; margin: 0 4px; }
+.indicator { font-size: 13px; padding: 0 4px; color: #64748b; }
+.indicator.off { color: #64748b; }
+.indicator.on { color: #22c55e; }
+
+/* Main Content */
+#main {
+  display: flex; flex: 1; overflow: hidden; min-height: 0;
+}
+
+/* Sidebar */
+#sidebar {
+  width: 270px; min-width: 200px; background: #1e293b; overflow-y: auto;
+  border-right: 1px solid #334155; flex-shrink: 0;
+}
+.telemetry-group {
+  background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+  margin: 6px; padding: 0;
+}
+.group-title {
+  color: #7c3aed; font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  padding: 10px 12px 6px; border-bottom: 1px solid #1e293b;
+}
+.group-content { padding: 6px 12px 10px; }
+.row {
+  display: flex; align-items: center; padding: 2px 0; font-size: 13px;
+}
+.row-label { color: #64748b; width: 62px; flex-shrink: 0; }
+.row-value { color: #e2e8f0; font-weight: 600; margin-left: auto;
+  font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace; }
+.row-unit { color: #475569; width: 24px; text-align: right; flex-shrink: 0; }
+
+.battery-bar {
+  height: 18px; background: #1e293b; border-radius: 4px; margin-top: 6px;
+  overflow: hidden; position: relative; border: 1px solid #334155;
+}
+.battery-fill {
+  height: 100%; border-radius: 3px; transition: width 0.3s, background 0.3s;
+  background: #22c55e;
+}
+.battery-text {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 10px; font-weight: 700; color: #e2e8f0;
+}
+
+/* Map */
+.map-container {
+  flex: 1; position: relative; min-width: 400px;
+}
+#map { height: 100%; width: 100%; }
+
+/* Action Panel */
+#actionPanel {
+  width: 200px; min-width: 160px; background: #1e293b; overflow-y: auto;
+  border-left: 1px solid #334155; flex-shrink: 0;
+}
+.action-section {
+  background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+  margin: 6px; padding: 10px;
+}
+.action-title {
+  color: #64748b; font-size: 10px; font-weight: 700; letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+#actionPanel select {
+  width: 100%; background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; font-weight: 600;
+  cursor: pointer; outline: none; margin-bottom: 6px;
+  font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+}
+#actionPanel select:focus { border-color: #7c3aed; }
+.action-btn {
+  width: 100%; border: none; border-radius: 6px; padding: 7px 12px;
+  font-size: 11px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px;
+  margin-bottom: 5px; background: #334155; color: #e2e8f0;
+  transition: filter 0.1s;
+}
+.action-btn:hover { filter: brightness(1.15); }
+.action-btn.success { background: #22c55e; color: #0f172a; }
+.action-btn.danger { background: #ef4444; color: white; }
+.action-btn.warning { background: #eab308; color: #0f172a; }
+.btn-row { display: flex; gap: 5px; }
+.btn-row .action-btn { flex: 1; }
+
+.info-row {
+  display: flex; font-size: 12px; padding: 3px 0; color: #94a3b8;
+}
+.info-label { color: #64748b; width: 60px; flex-shrink: 0; }
+
+/* Console */
+#console {
+  background: #0f172a; border-top: 1px solid #334155; flex-shrink: 0;
+  display: flex; flex-direction: column; height: 180px;
+}
+#console.hidden { display: none; }
+.console-header {
+  color: #7c3aed; font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+  padding: 6px 12px; background: #1e293b; border-bottom: 1px solid #334155;
+  flex-shrink: 0;
+}
+#consoleOutput {
+  flex: 1; overflow-y: auto; padding: 8px 12px; font-size: 13px;
+  font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+  line-height: 1.5; color: #94a3b8;
+}
+.log-info { color: #94a3b8; }
+.log-success { color: #22c55e; }
+.log-warning { color: #eab308; }
+.log-error { color: #ef4444; }
+.log-mavlink { color: #0ea5e9; }
+.log-system { color: #7c3aed; font-weight: 600; }
+
+/* Status Bar */
+#statusbar {
+  display: flex; align-items: center; background: #1e293b;
+  border-top: 1px solid #334155; padding: 3px 12px; font-size: 12px;
+  flex-shrink: 0; height: 28px; color: #94a3b8;
+}
+#statusMessage { flex: 1; }
+.status-right { display: flex; align-items: center; gap: 0; }
+.status-indicator { padding: 0 8px; font-size: 12px; }
+.status-sep { width: 1px; height: 16px; background: #334155; }
+
+/* Connection Dialog */
+.dialog-overlay {
+  position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+  background: rgba(0,0,0,0.6); z-index: 2000; display: flex;
+  align-items: center; justify-content: center;
+}
+.dialog-box {
+  background: #1e293b; border: 1px solid #334155; border-radius: 12px;
+  padding: 24px; min-width: 360px; box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+}
+.dialog-box h3 { color: #e2e8f0; margin-bottom: 16px; font-size: 15px; }
+.dialog-row { display: flex; align-items: center; margin-bottom: 12px; gap: 12px; }
+.dialog-row label { color: #94a3b8; font-size: 13px; width: 100px; }
+.dialog-row input {
+  flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+  border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
+}
+.dialog-row input:focus { border-color: #7c3aed; }
+.dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dialog-btns button {
+  padding: 8px 20px; border: none; border-radius: 6px; font-size: 12px;
+  font-weight: 700; cursor: pointer;
+}
+.dialog-btns .primary { background: #7c3aed; color: white; }
+.dialog-btns .primary:hover { background: #6d28d9; }
+.dialog-btns .secondary { background: #334155; color: #e2e8f0; }
+.dialog-btns .secondary:hover { background: #475569; }
