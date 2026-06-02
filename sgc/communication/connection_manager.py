@@ -1,4 +1,6 @@
 import math
+import os
+import socket
 import threading
 import time
 from pymavlink import mavutil
@@ -10,14 +12,16 @@ except ImportError:
 
 
 FLIGHT_MODES = {
-    "STABILIZE": 0, "ACRO": 1, "ALT_HOLD": 2, "AUTO": 3,
-    "GUIDED": 4, "LOITER": 5, "RTL": 6, "CIRCLE": 7,
-    "LAND": 9, "DRIFT": 11, "SPORT": 13, "FLIP": 14,
-    "AUTOTUNE": 15, "POSHOLD": 16, "BRAKE": 17,
-    "THROW": 18, "AVOID_ADSB": 19, "GUIDED_NOGPS": 20,
-    "SMART_RTL": 21, "FLOWHOLD": 22, "FOLLOW": 23,
-    "ZIGZAG": 24, "SYSTEM_ID": 25, "AUTOROTATE": 26, "AUTO_RTL": 27,
+    0: "STABILIZE", 1: "ACRO", 2: "ALT_HOLD", 3: "AUTO",
+    4: "GUIDED", 5: "LOITER", 6: "RTL", 7: "CIRCLE",
+    9: "LAND", 11: "DRIFT", 13: "SPORT", 14: "FLIP",
+    15: "AUTOTUNE", 16: "POSHOLD", 17: "BRAKE",
+    18: "THROW", 19: "AVOID_ADSB", 20: "GUIDED_NOGPS",
+    21: "SMART_RTL", 22: "FLOWHOLD", 23: "FOLLOW",
+    24: "ZIGZAG", 25: "SYSTEM_ID", 26: "AUTOROTATE", 27: "AUTO_RTL",
 }
+
+FLIGHT_MODES_NAME_TO_ID = {v: k for k, v in FLIGHT_MODES.items()}
 
 VEHICLE_TYPES = {
     mavutil.mavlink.MAV_TYPE_QUADROTOR: "QuadCopter",
@@ -54,6 +58,7 @@ COMMAND_NAMES = {
     mavutil.mavlink.MAV_CMD_NAV_TAKEOFF: "TAKEOFF",
     mavutil.mavlink.MAV_CMD_MISSION_START: "START_MISSION",
     mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION: "CALIBRATION",
+    mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN: "REBOOT",
 }
 
 CMD_RESULTS = {0: "Accepted", 1: "Temp Reject", 2: "Denied", 3: "Unsupported",
@@ -83,7 +88,6 @@ class MAVLinkConnection:
         self.running = False
         self._thread = None
         self.listeners = []
-        self._debug_types = set()
 
         self.state = {
             "connected": False,
@@ -107,6 +111,10 @@ class MAVLinkConnection:
         self._requesting_params = False
         self._ref_pressure = None
 
+        self._mission_state = None
+        self._mission_listeners = []
+        self._mission_upload_phase = 0  # 0=idle, 1=clearing, 2=uploading, 3=done
+
     def add_listener(self, callback):
         self.listeners.append(callback)
 
@@ -117,8 +125,40 @@ class MAVLinkConnection:
             except Exception:
                 pass
 
+    def _probe(self):
+        cs = self.connection_string
+
+        if cs.startswith("udpout:"):
+            rest = cs[len("udpout:"):]
+            host, _, port = rest.partition(":")
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(2)
+            try:
+                s.connect((host, int(port)))
+                s.send(b"\x00")
+                s.recv(1)
+                self._emit("log", {"message": f"Probe: {host}:{port} responded", "level": "info"})
+            except socket.timeout:
+                self._emit("log", {"message": f"Probe: {host}:{port} reachable (no data)", "level": "info"})
+            except ConnectionRefusedError:
+                self._emit("log", {"message": f"Probe: {host}:{port} — nothing listening", "level": "warning"})
+            except Exception as e:
+                self._emit("log", {"message": f"Probe: {host}:{port} — {e}", "level": "warning"})
+            finally:
+                s.close()
+
+        elif cs.startswith("/dev/") or cs.startswith("COM"):
+            if not os.path.exists(cs):
+                self._emit("log", {"message": f"Probe: serial device {cs} not found", "level": "error"})
+                return False
+            self._emit("log", {"message": f"Probe: serial device {cs} exists", "level": "info"})
+
+        return True
+
     def connect(self):
         try:
+            if not self._probe():
+                return False
             self.master = mavutil.mavlink_connection(
                 self.connection_string,
                 baud=self.baud,
@@ -140,12 +180,7 @@ class MAVLinkConnection:
             self.state["connected"] = True
 
             self._emit("log", {
-                "message": (
-                    f"Heartbeat from sys={self.master.target_system} "
-                    f"comp={self.master.target_component} | "
-                    f"{VEHICLE_TYPES.get(heartbeat.type, f'Type {heartbeat.type}')} | "
-                    f"{AUTOPILOTS.get(heartbeat.autopilot, 'Unknown')}"
-                ),
+                "message": f"online system {self.master.target_system}",
                 "level": "success",
             })
 
@@ -174,16 +209,22 @@ class MAVLinkConnection:
 
     def _read_loop(self):
         last_emit = 0
-        last_report = 0
-        msg_counts = {}
         while self.running:
             try:
                 msg = self.master.recv_match(blocking=True, timeout=0.05)
                 if msg:
                     self._process_message(msg)
-                    t = msg.get_type()
-                    msg_counts[t] = msg_counts.get(t, 0) + 1
             except Exception as e:
+                err_str = str(e)
+                is_disconnect = (
+                    (isinstance(e, OSError) and e.errno == 6) or
+                    "Device not configured" in err_str or
+                    "device disconnected" in err_str.lower()
+                )
+                if is_disconnect:
+                    self._emit("log", {"message": "Device disconnected (USB unplugged)", "level": "warning"})
+                    self.running = False
+                    break
                 if self.running:
                     self._emit("log", {"message": f"Read error: {e}", "level": "error"})
 
@@ -192,19 +233,6 @@ class MAVLinkConnection:
                 self._emit("state_update", dict(self.state))
                 last_emit = now
 
-            if now - last_report >= 5.0 and msg_counts:
-                total = sum(msg_counts.values())
-                types = ", ".join(
-                    f"{k}={v}" for k, v in sorted(
-                        msg_counts.items(), key=lambda x: -x[1]
-                    )[:6]
-                )
-                self._emit("log", {
-                    "message": f"MAVLink: {total} msgs in 5s | {types}",
-                    "level": "mavlink",
-                })
-                msg_counts.clear()
-                last_report = now
         self.disconnect()
 
     def _process_message(self, msg):
@@ -213,28 +241,21 @@ class MAVLinkConnection:
         if msg_type == "BAD_DATA":
             return
 
-        if msg_type not in self._debug_types:
-            self._debug_types.add(msg_type)
-            try:
-                d = msg.to_dict()
-                items = [f"{k}={d[k]}" for k in d if not k.startswith("mavpacket")]
-                preview = ", ".join(items)
-                if len(preview) > 600:
-                    preview = preview[:600] + "..."
-                self._emit("log", {
-                    "message": f"[MAV] {msg_type}: {preview}",
-                    "level": "mavlink",
-                })
-            except Exception:
-                pass
-
         if msg_type == "HEARTBEAT":
-            self.state["mode"] = self._resolve_mode(msg.custom_mode, msg.type)
-            self.state["armed"] = bool(
+            new_mode = self._resolve_mode(msg.custom_mode, msg.type)
+            new_armed = bool(
                 msg.base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED
             )
             self.state["vehicle_type"] = VEHICLE_TYPES.get(msg.type, f"Type {msg.type}")
             self.state["firmware"] = AUTOPILOTS.get(msg.autopilot, "Unknown")
+
+            if "mode" in self.state and self.state["mode"] != new_mode:
+                self._emit("log", {"message": f"Mode {new_mode}", "level": "info"})
+            self.state["mode"] = new_mode
+
+            if "armed" in self.state and self.state["armed"] != new_armed:
+                self._emit("log", {"message": "ARMED" if new_armed else "DISARMED", "level": "warning" if new_armed else "info"})
+            self.state["armed"] = new_armed
 
         elif msg_type == "SYS_STATUS":
             if msg.voltage_battery > 0:
@@ -249,10 +270,6 @@ class MAVLinkConnection:
             press_abs = getattr(msg, 'press_abs', 1013.25)
             if self._ref_pressure is None:
                 self._ref_pressure = press_abs
-                self._emit("log", {
-                    "message": f"Baro ref set: {press_abs:.2f} hPa",
-                    "level": "info",
-                })
             rel_alt_m = 44330.0 * (1.0 - (press_abs / self._ref_pressure) ** (1.0 / 5.255))
             self.state["alt"] = round(rel_alt_m, 2)
 
@@ -298,30 +315,35 @@ class MAVLinkConnection:
 
         elif msg_type == "STATUSTEXT":
             severity = STATUSTEXT_SEVERITY.get(getattr(msg, 'severity', 6), "info")
-            self._emit("log", {"message": f"[FCU] {getattr(msg, 'text', '')}", "level": severity})
+            self._emit("log", {"message": f"{getattr(msg, 'text', '')}", "level": severity})
 
         elif msg_type == "COMMAND_ACK":
             cmd_name = COMMAND_NAMES.get(getattr(msg, 'command', 0), f"CMD_{getattr(msg, 'command', 0)}")
             result = CMD_RESULTS.get(getattr(msg, 'result', 0), f"Code {getattr(msg, 'result', 0)}")
             level = "success" if getattr(msg, 'result', 0) == 0 else "error"
-            self._emit("log", {"message": f"{cmd_name}: {result}", "level": level})
+            self._emit("log", {"message": f"Got COMMAND_ACK: {cmd_name}: {result}", "level": level})
 
         elif msg_type == "PARAM_VALUE":
             name = getattr(msg, 'param_id', '').rstrip("\x00")
+            param_index = getattr(msg, 'param_index', 0)
+            param_count = getattr(msg, 'param_count', 0)
+            # FCU sends 65535 sentinel after PARAM_SET — preserve original index
+            if param_index == 65535 and name in self.params:
+                param_index = self.params[name]["index"]
             self.params[name] = {
                 "value": getattr(msg, 'param_value', 0),
                 "type": PARAM_TYPES.get(getattr(msg, 'param_type', 0), f"type_{getattr(msg, 'param_type', 0)}"),
-                "index": getattr(msg, 'param_index', 0),
+                "index": param_index,
             }
-            self._param_count = getattr(msg, 'param_count', 0)
+            self._param_count = param_count
 
             for cb in self._param_listeners:
                 try:
-                    cb(name, self.params[name], getattr(msg, 'param_index', 0), getattr(msg, 'param_count', 0))
+                    cb(name, self.params[name], param_index, param_count)
                 except Exception:
                     pass
 
-            if self._requesting_params and getattr(msg, 'param_index', 0) >= getattr(msg, 'param_count', 0) - 1:
+            if self._requesting_params and param_index != 65535 and param_index >= param_count - 1:
                 self._requesting_params = False
                 self._emit("log", {
                     "message": f"Loaded {getattr(msg, 'param_count', 0)} parameters",
@@ -330,6 +352,83 @@ class MAVLinkConnection:
 
         elif msg_type == "RC_CHANNELS":
             pass
+
+        elif msg_type == "MISSION_REQUEST_INT":
+            seq = getattr(msg, 'seq', 0)
+            self._handle_mission_request(seq)
+
+        elif msg_type == "MISSION_REQUEST":
+            seq = getattr(msg, 'seq', 0)
+            self._handle_mission_request(seq)
+
+        elif msg_type == "MISSION_ACK":
+            mtype = getattr(msg, 'type', 255)
+            mission_type_names = {0: "ACCEPTED", 1: "ERROR", 2: "UNKNOWN_FRAME",
+                                  3: "UNKNOWN_CMD", 4: "NO_SPACE", 5: "TIMEOUT",
+                                  6: "INVALID_PARAM", 7: "INVALID_SEQUENCE",
+                                  8: "INVALID_INT", 9: "TOO_MANY", 10: "INVALID",
+                                  14: "DENIED", 15: "OPERATION_CANCELLED"}
+            result = mission_type_names.get(mtype, f"Code {mtype}")
+            if self._mission_upload_phase == 1:
+                # ACK from CLEAR_ALL — proceed to send count
+                self._mission_upload_phase = 2
+                count = len(self._mission_state) + 1 if self._mission_state else 1
+                self.master.mav.mission_count_send(
+                    self.master.target_system, self.master.target_component,
+                    count,
+                )
+            elif self._mission_upload_phase == 2:
+                # Final ACK after all items sent
+                self._emit("log", {"message": f"Got MISSION_ACK: {result}", "level": "success" if mtype == 0 else "error"})
+                self._emit("mission_upload_complete", {"result": result, "success": mtype == 0})
+                self._mission_state = None
+                self._mission_upload_phase = 0
+
+        elif msg_type == "MISSION_COUNT":
+            count = getattr(msg, 'count', 0)
+            if hasattr(self, '_mission_download_seq') and self._mission_download_seq is not None:
+                self._mission_download_count = count
+                self._emit("log", {"message": f"Downloading {count} mission items...", "level": "info"})
+                if count == 0:
+                    self._mission_download_seq = None
+                    self._emit("log", {"message": "Mission is empty", "level": "info"})
+                    for cb in self._mission_listeners:
+                        try: cb([])
+                        except: pass
+                else:
+                    self._request_mission_item(self._mission_download_seq)
+
+        elif msg_type == "MISSION_ITEM_INT":
+            if hasattr(self, '_mission_download_seq') and self._mission_download_seq is not None:
+                seq = getattr(msg, 'seq', 0)
+                current = getattr(msg, 'current', 0)
+                frame = getattr(msg, 'frame', 0)
+                command = getattr(msg, 'command', 0)
+                x = getattr(msg, 'x', 0)  # lat * 1e7
+                y = getattr(msg, 'y', 0)  # lon * 1e7
+                z = getattr(msg, 'z', 0)  # alt
+                param1 = getattr(msg, 'param1', 0)
+                param2 = getattr(msg, 'param2', 0)
+                param3 = getattr(msg, 'param3', 0)
+                param4 = getattr(msg, 'param4', 0)
+                wp = {
+                    'seq': seq, 'current': current, 'frame': frame,
+                    'command': command, 'param1': param1, 'param2': param2,
+                    'param3': param3, 'param4': param4,
+                    'x': x / 1e7, 'y': y / 1e7, 'z': z,
+                }
+                self._mission_download_wps.append(wp)
+                self._mission_download_seq = seq + 1
+                if self._mission_download_seq < self._mission_download_count:
+                    self._request_mission_item(self._mission_download_seq)
+                else:
+                    self._emit("log", {"message": f"Downloaded {len(self._mission_download_wps)} waypoints", "level": "success"})
+                    for cb in self._mission_listeners:
+                        try: cb(self._mission_download_wps)
+                        except: pass
+                    self._mission_download_seq = None
+                    self._mission_download_wps = []
+                    self._mission_download_count = 0
 
         else:
             pass
@@ -392,7 +491,7 @@ class MAVLinkConnection:
             return False
 
     def set_mode(self, mode_name):
-        mode_id = FLIGHT_MODES.get(mode_name.upper())
+        mode_id = FLIGHT_MODES_NAME_TO_ID.get(mode_name.upper())
         if mode_id is None:
             self._emit("log", {"message": f"Unknown mode: {mode_name}", "level": "error"})
             return False
@@ -409,20 +508,30 @@ class MAVLinkConnection:
         return self.send_command(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0)
 
     def rtl(self):
-        self.state["mode"] = "RTL"
         return self.send_command(mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH)
 
     def land(self):
-        self.state["mode"] = "LAND"
-        return self.send_command(mavutil.mavlink.MAV_CMD_NAV_LAND)
+        return self.set_mode("LAND")
 
     def takeoff(self, altitude=10):
-        return self.send_command(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, altitude)
+        self.send_command(
+            mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+            0, 0, 0, 0, 0, 0, altitude,
+        )
+
+    def reboot(self, autopilot_only=True):
+        return self.send_command(
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+            1,  # reboot autopilot
+            0,  # do not reboot companion
+            0,  # action on next reboots
+        )
 
     def request_params(self, callback=None):
         if not self.master or not self.running:
             return
         self.params.clear()
+        self._param_listeners.clear()
         self._requesting_params = True
         if callback:
             self._param_listeners.append(callback)
@@ -430,6 +539,128 @@ class MAVLinkConnection:
         self.master.mav.param_request_list_send(
             self.master.target_system, self.master.target_component
         )
+
+    def _handle_mission_request(self, seq):
+        if not self._mission_state or seq > len(self._mission_state):
+            self._emit("log", {"message": f"MISSION_REQUEST for seq {seq} out of range (state={self._mission_state})", "level": "error"})
+            return
+        if seq == 0:
+            lat = self.state.get("lat", 0)
+            lon = self.state.get("lon", 0)
+            self._emit("log", {"message": f"Sending HOME ({lat:.4f}, {lon:.4f}) at seq 0", "level": "info"})
+            try:
+                from pymavlink.dialects.v20.ardupilotmega import MAV_FRAME_GLOBAL
+                self.master.mav.mission_item_int_send(
+                    self.master.target_system, self.master.target_component,
+                    0, MAV_FRAME_GLOBAL, 16, 0, 1,
+                    0, 0, 0, 0,
+                    int(lat * 1e7), int(lon * 1e7), 0,
+                )
+            except Exception as e:
+                self._emit("log", {"message": f"HOME send failed: {e}", "level": "error"})
+            return
+        idx = seq - 1
+        if idx >= len(self._mission_state):
+            return
+        wp = self._mission_state[idx]
+        try:
+            from pymavlink.dialects.v20.ardupilotmega import MAV_FRAME_GLOBAL_RELATIVE_ALT_INT
+            self.master.mav.mission_item_int_send(
+                self.master.target_system, self.master.target_component,
+                seq, MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                wp.get('command', 16), 0, 1,
+                wp.get('param1', 0), wp.get('param2', 0),
+                wp.get('param3', 0), wp.get('param4', 0),
+                int(wp.get('x', 0) * 1e7),
+                int(wp.get('y', 0) * 1e7),
+                wp.get('z', 50),
+            )
+        except Exception as e:
+            self._emit("log", {"message": f"Mission item {seq} send failed: {e}", "level": "error"})
+
+    def _request_mission_item(self, seq):
+        if not self.master:
+            return
+        try:
+            self.master.mav.mission_request_int_send(
+                self.master.target_system,
+                self.master.target_component,
+                seq,
+            )
+        except Exception:
+            pass
+
+    def upload_mission(self, waypoints):
+        """Upload mission waypoints. waypoints = list of dicts with x, y, z, command, param1-4."""
+        if not self.master or not self.running:
+            self._emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        self._mission_state = waypoints
+        self._mission_upload_phase = 1
+        self._emit("log", {"message": f"Uploading {len(waypoints)} waypoints + HOME ({len(waypoints) + 1} total)", "level": "info"})
+        self.master.mav.mission_clear_all_send(
+            self.master.target_system, self.master.target_component
+        )
+
+    def download_mission(self, callback=None):
+        """Download mission from FCU. Result passed to callback."""
+        if not self.master or not self.running:
+            self._emit("log", {"message": "Not connected", "level": "warning"})
+            if callback: callback([])
+            return
+        self._mission_listeners = [callback] if callback else []
+        self._mission_download_wps = []
+        self._mission_download_seq = 0
+        self._mission_download_count = 0
+        self.master.mav.mission_request_list_send(
+            self.master.target_system, self.master.target_component
+        )
+
+    def goto_position(self, lat, lon, alt=50):
+        """Send SET_POSITION_TARGET_GLOBAL_INT for guided waypoint."""
+        if not self.master or not self.running:
+            return False
+        try:
+            from pymavlink.dialects.v20.ardupilotmega import (
+                MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                POSITION_TARGET_TYPEMASK_VX_IGNORE,
+                POSITION_TARGET_TYPEMASK_VY_IGNORE,
+                POSITION_TARGET_TYPEMASK_VZ_IGNORE,
+                POSITION_TARGET_TYPEMASK_AX_IGNORE,
+                POSITION_TARGET_TYPEMASK_AY_IGNORE,
+                POSITION_TARGET_TYPEMASK_AZ_IGNORE,
+                POSITION_TARGET_TYPEMASK_YAW_IGNORE,
+                POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE,
+            )
+            mask = (
+                POSITION_TARGET_TYPEMASK_VX_IGNORE |
+                POSITION_TARGET_TYPEMASK_VY_IGNORE |
+                POSITION_TARGET_TYPEMASK_VZ_IGNORE |
+                POSITION_TARGET_TYPEMASK_AX_IGNORE |
+                POSITION_TARGET_TYPEMASK_AY_IGNORE |
+                POSITION_TARGET_TYPEMASK_AZ_IGNORE |
+                POSITION_TARGET_TYPEMASK_YAW_IGNORE |
+                POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE
+            )
+            self.master.mav.set_position_target_global_int_send(
+                0,  # time_boot_ms
+                self.master.target_system,
+                self.master.target_component,
+                MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                mask,
+                int(lat * 1e7), int(lon * 1e7), alt,
+                0, 0, 0,  # vx, vy, vz
+                0, 0, 0,  # ax, ay, az
+                0, 0,     # yaw, yaw_rate
+            )
+            self._emit("log", {
+                "message": f"Guided goto: {lat:.6f}, {lon:.6f} @ {alt}m",
+                "level": "info",
+            })
+            return True
+        except Exception as e:
+            self._emit("log", {"message": f"Guided goto failed: {e}", "level": "error"})
+            return False
 
     def set_param(self, name, value):
         if not self.master or not self.running:
@@ -486,7 +717,6 @@ class MAVLinkConnection:
                 )
             except Exception:
                 pass
-        self._emit("log", {"message": "Data streams requested (10Hz)", "level": "info"})
 
     @staticmethod
     def detect_ports(baud=57600, timeout=2):

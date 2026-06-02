@@ -8,9 +8,12 @@ let vehicle = {
 let vehicleMarker = null;
 let vehicleCircle = null;
 let trail = [];
+let trailGroup = null;
+let missionWpGroup = null;
+const TRAIL_MAX = 500;
+const TRAIL_SEGMENTS = 10;
 
 socket.on('connect', () => {
-  log('Connected to SGC server', 'system');
 });
 
 socket.on('state_update', (data) => {
@@ -19,10 +22,22 @@ socket.on('state_update', (data) => {
   updateMap(data);
   updateActions(data);
   updateStatusBar(data);
+  const btn = document.getElementById('connectBtn');
+  if (data.connected) {
+    btn.textContent = 'DISCONNECT';
+    btn.className = 'connected';
+  } else {
+    btn.textContent = 'CONNECT';
+    btn.className = '';
+  }
 });
 
 socket.on('log', (data) => {
   log(data.message, data.level);
+});
+
+socket.on('mission_data', (data) => {
+  drawMissionWaypoints(data.waypoints || []);
 });
 
 function log(message, level = 'info') {
@@ -38,58 +53,8 @@ function toggleConnection() {
   if (vehicle.connected) {
     disconnectVehicle();
   } else {
-    const port = document.getElementById('portSelect').value;
-    const baud = document.getElementById('baudSelect').value;
-    if (port === 'auto') {
-      autoScanConnect(baud);
-      return;
-    }
-    if (!port) {
-      log('Select a serial port or use Auto', 'warning');
-      return;
-    }
-    connectVehicle('serial', port, baud, '', '');
+    showConnectDialog();
   }
-}
-
-async function autoScanConnect(baud) {
-  const btn = document.getElementById('connectBtn');
-  btn.textContent = 'SCANNING...';
-  btn.disabled = true;
-  log('Scanning serial ports for MAVLink device...', 'info');
-  try {
-    const res = await fetch(`/api/auto_scan?baud=${baud}&timeout=2`);
-    const data = await res.json();
-    if (data.found && data.found.length > 0) {
-      const device = data.found[0];
-      log(`Auto-detected: ${device.device} (${device.description})`, 'success');
-      const sel = document.getElementById('portSelect');
-      sel.value = device.device;
-      connectVehicle('serial', device.device, baud, '', '');
-    } else {
-      log('No MAVLink device found on any serial port', 'error');
-      btn.textContent = 'CONNECT';
-      btn.disabled = false;
-    }
-  } catch (e) {
-    log(`Auto-scan failed: ${e}`, 'error');
-    btn.textContent = 'CONNECT';
-    btn.disabled = false;
-  }
-}
-
-function connectVehicle(connType, port, baud, host, portNum) {
-  log(`Connecting: ${connType} ${port ? port + ' ' : ''}@ ${baud} baud...`, 'info');
-  const btn = document.getElementById('connectBtn');
-  btn.textContent = 'CONNECTING...';
-  btn.disabled = true;
-  socket.emit('connect_vehicle', {
-    type: connType,
-    port: port,
-    baud: parseInt(baud),
-    host: host || '',
-    port_num: parseInt(portNum) || 0,
-  });
 }
 
 function disconnectVehicle() {
@@ -100,44 +65,38 @@ function disconnectVehicle() {
   btn.disabled = false;
 }
 
-function setMode() {
-  const mode = document.getElementById('flightModeSelect').value;
-  log(`Setting mode: ${mode}`, 'info');
-  socket.emit('set_mode', { mode });
+function connectVehicle(type, port, baud, host, portNum) {
+  log(`Connecting: ${type}${port ? ' ' + port : ''} @ ${baud} baud...`, 'info');
+  const btn = document.getElementById('connectBtn');
+  btn.textContent = 'CONNECTING...';
+  btn.disabled = true;
+  socket.emit('connect_vehicle', {
+    type, port, baud: parseInt(baud),
+    host: host || '', port_num: parseInt(portNum) || 0,
+  });
 }
 
-function arm() {
-  log('ARM command sent', 'warning');
-  socket.emit('arm');
-}
-function disarm() {
-  log('DISARM command sent', 'info');
-  socket.emit('disarm');
-}
-function command(cmd) {
-  log(`Command: ${cmd}`, 'info');
-  socket.emit('command', { command: cmd });
-}
-
-function showConnectionDialog() {
+function showConnectDialog() {
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.innerHTML = `
-    <div class="dialog-box" style="width:400px">
+    <div class="dialog-box" style="width:420px">
       <h3>Connect to Vehicle</h3>
       <div class="dialog-row">
         <label>Type:</label>
-        <select id="connTypeSelect" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
+        <select id="connType" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
+          <option value="sitl">SITL (UDP 127.0.0.1:14550)</option>
           <option value="serial">Serial Port</option>
           <option value="tcp_client">TCP Client</option>
           <option value="tcp_server">TCP Server</option>
-          <option value="udp">UDP</option>
+          <option value="udp">UDP (listen)</option>
         </select>
       </div>
-      <div id="serialFields">
+
+      <div id="connSerial" style="display:none">
         <div class="dialog-row">
           <label>Port:</label>
-          <input type="text" id="dialPort" value="/dev/ttyACM0" />
+          <select id="dialPort" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;"></select>
         </div>
         <div class="dialog-row">
           <label>Baud:</label>
@@ -147,45 +106,117 @@ function showConnectionDialog() {
           </select>
         </div>
       </div>
-      <div id="netFields" style="display:none">
+
+      <div id="connNet" style="display:none">
         <div class="dialog-row">
           <label>Host:</label>
-          <input type="text" id="dialHost" value="127.0.0.1" />
+          <input type="text" id="dialHost" value="127.0.0.1" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;" />
         </div>
         <div class="dialog-row">
           <label>Port:</label>
-          <input type="text" id="dialPortNum" value="5760" />
+          <input type="text" id="dialPortNum" value="5760" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;" />
         </div>
       </div>
+
       <div class="dialog-btns">
         <button class="secondary" onclick="this.closest('.dialog-overlay').remove()">Cancel</button>
-        <button class="primary" onclick="connectFromDialog()">Connect</button>
+        <button class="primary" onclick="doConnect()">Connect</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
 
-  const typeSelect = overlay.querySelector('#connTypeSelect');
-  const serialFields = overlay.querySelector('#serialFields');
-  const netFields = overlay.querySelector('#netFields');
+  const typeSel = overlay.querySelector('#connType');
+  const serialDiv = overlay.querySelector('#connSerial');
+  const netDiv = overlay.querySelector('#connNet');
 
-  typeSelect.addEventListener('change', () => {
-    const val = typeSelect.value;
-    serialFields.style.display = val === 'serial' ? '' : 'none';
-    netFields.style.display = val === 'serial' ? 'none' : '';
-  });
+  const updateFields = () => {
+    const v = typeSel.value;
+    serialDiv.style.display = v === 'serial' ? '' : 'none';
+    netDiv.style.display = (v === 'tcp_client' || v === 'tcp_server' || v === 'udp') ? '' : 'none';
+  };
+  typeSel.addEventListener('change', updateFields);
+
+  // Populate serial ports when type is auto/serial
+  const loadSer = async () => {
+    const sel = overlay.querySelector('#dialPort');
+    sel.innerHTML = '<option value="">Scanning...</option>';
+    try {
+      const r = await fetch('/api/ports');
+      const ports = await r.json();
+      sel.innerHTML = '';
+      if (ports.length === 0) {
+        sel.innerHTML = '<option value="">No ports found</option>';
+      }
+      ports.forEach(p => {
+        const o = document.createElement('option');
+        o.value = p.device;
+        o.textContent = `${p.device}  (${p.description})`;
+        sel.appendChild(o);
+      });
+    } catch {
+      sel.innerHTML = '<option value="">Error loading ports</option>';
+    }
+  };
+  loadSer();
+  updateFields();
 }
 
-function connectFromDialog() {
-  const type = document.querySelector('#connTypeSelect').value;
+function doConnect() {
+  const type = document.querySelector('#connType').value;
   const port = document.querySelector('#dialPort')?.value || '';
   const baud = document.querySelector('#dialBaud')?.value || '57600';
   const host = document.querySelector('#dialHost')?.value || '';
   const portNum = document.querySelector('#dialPortNum')?.value || '0';
 
-  connectVehicle(type, port, baud, host, portNum);
+  if (type === 'sitl') {
+    connectVehicle('udp', '', '57600', '127.0.0.1', '14550');
+  } else if (type === 'serial') {
+    if (!port) { log('Select a serial port', 'warning'); return; }
+    connectVehicle('serial', port, baud, '', '');
+  } else {
+    connectVehicle(type, '', baud, host, portNum);
+  }
   document.querySelector('.dialog-overlay').remove();
 }
+
+function setMode() {
+  const mode = document.getElementById('flightModeSelect').value;
+  log(`Setting mode: ${mode}`, 'info');
+  socket.emit('set_mode', { mode });
+}
+
+function arm() {
+  socket.emit('arm');
+}
+function disarm() {
+  socket.emit('disarm');
+}
+function command(cmd, extra = {}) {
+  socket.emit('command', { command: cmd, ...extra });
+}
+
+function takeoffPrompt() {
+  const alt = prompt('Takeoff altitude (m):', '10');
+  if (alt === null) return;
+  command('TAKEOFF', { altitude: parseFloat(alt) || 10 });
+}
+
+function armTakeoff() {
+  const alt = prompt('Takeoff altitude (m):', '10');
+  if (alt === null) return;
+  socket.emit('set_mode', { mode: 'GUIDED' });
+  setTimeout(() => {
+    socket.emit('arm');
+  }, 500);
+  setTimeout(() => {
+    command('TAKEOFF', { altitude: parseFloat(alt) || 10 });
+  }, 2000);
+}
+
+// Legacy stubs for menu references
+function showConnectionDialog() { showConnectDialog(); }
+function connectFromDialog() { doConnect(); }
 
 function menuAction(action) {
   if (action === 'Exit') { window.close(); return; }
@@ -193,12 +224,8 @@ function menuAction(action) {
     alert('SGC v0.1.0\nSkywin Ground Control Station\n\nA professional MAVLink GCS\nbuilt with Python, Flask & pymavlink.\n\nCompatible with ArduPilot and PX4.');
     return;
   }
-  if (['TCP Client', 'TCP Server', 'UDP'].includes(action)) {
-    showConnectionDialog();
-    return;
-  }
-  if (action === 'Serial Port') {
-    toggleConnection();
+  if (['Serial Port', 'TCP Client', 'TCP Server', 'UDP'].includes(action)) {
+    showConnectDialog();
     return;
   }
   log(`Menu: ${action}`, 'info');
@@ -242,6 +269,17 @@ function updateTelemetry(data) {
   setText('t_hdop', data.hdop?.toFixed(2) ?? '0.00');
   const fixTypes = {0: 'No Fix', 1: 'No Fix', 2: '2D', 3: '3D', 4: 'DGPS', 5: 'RTK Float', 6: 'RTK Fixed'};
   setText('t_fix', fixTypes[data.fix_type] ?? 'Unknown');
+
+  // Home distance & bearing
+  if (window.homeLatLng && data.lat && data.lon) {
+    var hl = window.homeLatLng;
+    var d = haversine(hl[0], hl[1], data.lat, data.lon);
+    var b = bearing(hl[0], hl[1], data.lat, data.lon);
+    setText('t_home_dist', d >= 1000 ? (d / 1000).toFixed(2) : d.toFixed(0));
+    document.querySelector('#t_home_dist + .row-unit').textContent = d >= 1000 ? 'km' : 'm';
+    setText('t_home_bearing', b.toFixed(0) + '\u00B0 ' + dirName(b));
+    setText('s_home', '\u25CF Dist: ' + (d >= 1000 ? (d / 1000).toFixed(2) + 'km' : d.toFixed(0) + 'm') + ' | Brg: ' + b.toFixed(0) + '\u00B0');
+  }
 }
 
 function drawAttitude(roll, pitch) {
@@ -290,52 +328,116 @@ function drawAttitude(roll, pitch) {
 }
 
 function updateMap(data) {
-  if (!window.map) {
-    initMap(data.lat || 37.7749, data.lon || -122.4194);
-  }
   if (data.lat && data.lon && vehicleMarker) {
     const latlng = [data.lat, data.lon];
     vehicleMarker.setLatLng(latlng);
+    const heading = data.heading || 0;
+    const arrow = vehicleMarker.getElement()?.querySelector('.vehicle-arrow');
+    if (arrow) {
+      arrow.style.transform = `rotate(${heading}deg)`;
+    }
     if (data.connected) {
       map.setView(latlng, map.getZoom());
     }
-    if (data.ground_speed > 0.1) {
-      trail.push(latlng);
-      if (trail.length > 500) trail.shift();
-      if (window.trailLine) map.removeLayer(window.trailLine);
-      window.trailLine = L.polyline(trail, {
-        color: '#0ea5e9', weight: 2, opacity: 0.6
-      }).addTo(map);
-    }
+    trail.push(latlng);
+    if (trail.length > TRAIL_MAX) trail.splice(0, trail.length - TRAIL_MAX);
+    rebuildTrail();
+  }
+}
+
+function rebuildTrail() {
+  if (!trailGroup) return;
+  trailGroup.clearLayers();
+  var n = trail.length;
+  if (n < 2) return;
+  var segs = TRAIL_SEGMENTS;
+  var segSize = Math.ceil(n / segs);
+  for (var i = 0; i < segs; i++) {
+    var start = i * segSize;
+    var end = Math.min((i + 1) * segSize, n);
+    if (end - start < 2) continue;
+    var opacity = 0.05 + (i / segs) * 0.65;
+    L.polyline(trail.slice(start, end), {
+      color: '#0ea5e9', weight: 2, opacity: opacity, interactive: false,
+    }).addTo(trailGroup);
+  }
+  // dots every ~10th point
+  var dotStep = Math.max(1, Math.floor(n / 50));
+  for (var i = 0; i < n; i += dotStep) {
+    var dotOp = 0.1 + (i / n) * 0.8;
+    L.circleMarker(trail[i], {
+      radius: 1.5, color: '#0ea5e9', fillColor: '#0ea5e9',
+      fillOpacity: dotOp, weight: 0, interactive: false,
+    }).addTo(trailGroup);
   }
 }
 
 function initMap(lat, lon) {
-  window.map = L.map('map', {
-    center: [lat, lon], zoom: 16, zoomControl: true, attributionControl: false,
-  });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19,
-  }).addTo(window.map);
+  try {
+    window.map = L.map('map', {
+      center: [lat, lon], zoom: 16, zoomControl: true, attributionControl: false,
+    });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+    }).addTo(window.map);
 
-  const vehicleIcon = L.divIcon({
-    className: 'vehicle-icon',
-    html: `<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:18px solid #0ea5e9;"></div>`,
-    iconSize: [16, 18],
-    iconAnchor: [8, 9],
-  });
+    addGrid(window.map);
+    trailGroup = L.featureGroup().addTo(window.map);
 
-  vehicleMarker = L.marker([lat, lon], { icon: vehicleIcon }).addTo(window.map);
-  vehicleCircle = L.circle([lat, lon], {
-    radius: 3, color: '#0ea5e9', fillColor: '#0ea5e9',
-    fillOpacity: 0.3, weight: 1,
-  }).addTo(window.map);
+    window.homeLatLng = [lat, lon];
+    const homeIcon = L.divIcon({
+      className: 'home-icon',
+      html: `<div style="width:12px;height:12px;background:#22c55e;border:2px solid #fff;border-radius:50%;box-shadow:0 0 6px rgba(34,197,94,0.6);"></div>`,
+      iconSize: [12, 12],
+      iconAnchor: [6, 6],
+    });
+    L.marker(window.homeLatLng, { icon: homeIcon })
+      .addTo(window.map).bindTooltip('Home', { direction: 'top' });
 
-  if (lat !== 37.7749 || lon !== -122.4194) {
-    L.circleMarker([lat - 0.0007, lon - 0.0005], {
-      radius: 5, color: '#22c55e', fillColor: '#22c55e', fillOpacity: 0.8,
-    }).addTo(window.map).bindTooltip('Home', { direction: 'top' });
+    vehicleMarker = L.marker([lat, lon], {
+      icon: L.divIcon({
+        className: 'vehicle-icon',
+        html: `<div class="vehicle-arrow" style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:20px solid #0ea5e9;filter:drop-shadow(0 0 4px rgba(14,165,233,0.6));"></div>`,
+        iconSize: [14, 20],
+        iconAnchor: [7, 10],
+      }),
+      zIndexOffset: 1000,
+    }).addTo(window.map);
+
+    vehicleCircle = L.circle([lat, lon], {
+      radius: 3, color: '#0ea5e9', fillColor: '#0ea5e9',
+      fillOpacity: 0.3, weight: 1,
+    }).addTo(window.map);
+
+    window.map.on('contextmenu', (e) => {
+      const ll = e.latlng;
+      const menu = document.getElementById('mapContextMenu');
+      if (!menu) return;
+      menu.style.left = `${e.originalEvent.clientX}px`;
+      menu.style.top = `${e.originalEvent.clientY}px`;
+      menu.dataset.lat = ll.lat.toFixed(7);
+      menu.dataset.lon = ll.lng.toFixed(7);
+      menu.classList.remove('hidden');
+    });
+  } catch (e) {
+    log(`Map init error: ${e}`, 'error');
   }
+  setTimeout(() => { try { window.map?.invalidateSize(); } catch {} }, 200);
+}
+
+document.addEventListener('click', () => {
+  const menu = document.getElementById('mapContextMenu');
+  if (menu) menu.classList.add('hidden');
+});
+
+function flyToHere() {
+  const menu = document.getElementById('mapContextMenu');
+  const lat = parseFloat(menu.dataset.lat);
+  const lon = parseFloat(menu.dataset.lon);
+  menu.classList.add('hidden');
+  const alt = prompt('Altitude (m):', '50');
+  if (alt === null) return;
+  command('GUIDED_GOTO', { lat, lon, altitude: parseFloat(alt) || 50 });
 }
 
 function updateActions(data) {
@@ -408,21 +510,31 @@ function setText(id, val) {
   if (el) el.textContent = val;
 }
 
-async function loadPorts() {
-  try {
-    const res = await fetch('/api/ports');
-    const ports = await res.json();
-    const sel = document.getElementById('portSelect');
-    sel.innerHTML = '<option value="auto">Auto</option>';
-    ports.forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.device;
-      opt.textContent = `${p.device}  (${p.description})`;
-      sel.appendChild(opt);
-    });
-  } catch (e) {
-    console.warn('Could not load serial ports', e);
-  }
+function haversine(lat1, lon1, lat2, lon2) {
+  var R = 6371000;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+          Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-loadPorts();
+function bearing(lat1, lon1, lat2, lon2) {
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var y = Math.sin(dLon) * Math.cos(lat2 * Math.PI / 180);
+  var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180) -
+          Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+var DIRS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+function dirName(deg) {
+  return DIRS[Math.round(deg / 22.5) % 16];
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  initMap(37.7749, -122.4194);
+});
+
+

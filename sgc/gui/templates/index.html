@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SGC - Skywin Ground Control Station</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=6" />
 </head>
 <body>
   <div id="app">
@@ -34,7 +34,7 @@
       </div>
       <div class="menu-item"><span>Flight Plan</span>
         <div class="menu-dropdown">
-          <div onclick="menuAction('Mission Planner')">Mission Planner</div>
+          <div onclick="location.href='/plan'">Mission Planner</div>
           <div onclick="menuAction('Geo-Fence Editor')">Geo-Fence Editor</div>
           <div onclick="menuAction('Rally Points')">Rally Points</div>
         </div>
@@ -44,6 +44,8 @@
           <div onclick="menuAction('Vehicle Setup')">Vehicle Setup</div>
           <div onclick="menuAction('Parameter Editor')">Parameter Editor</div>
           <div onclick="location.href='/params'">Full Parameter List</div>
+          <hr/>
+          <div onclick="location.href='/tuning'">Basic Tuning</div>
           <hr/>
           <div onclick="menuAction('App Settings')">App Settings...</div>
         </div>
@@ -65,19 +67,6 @@
     </nav>
 
     <div id="toolbar">
-      <span class="toolbar-label">Port:</span>
-      <select id="portSelect">
-        <option value="auto">Auto</option>
-      </select>
-      <span class="toolbar-label">Baud:</span>
-      <select id="baudSelect">
-        <option>9600</option>
-        <option>19200</option>
-        <option>38400</option>
-        <option selected>57600</option>
-        <option>115200</option>
-        <option>921600</option>
-      </select>
       <button id="connectBtn" onclick="toggleConnection()">CONNECT</button>
       <div class="toolbar-sep"></div>
       <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
@@ -124,6 +113,13 @@
             <div class="row"><span class="row-label">HDOP</span><span class="row-value" id="t_hdop">0.00</span></div>
           </div>
         </div>
+        <div class="telemetry-group">
+          <div class="group-title">HOME</div>
+          <div class="group-content">
+            <div class="row"><span class="row-label">Distance</span><span class="row-value" id="t_home_dist">--</span><span class="row-unit">m</span></div>
+            <div class="row"><span class="row-label">Bearing</span><span class="row-value" id="t_home_bearing">--</span><span class="row-unit">&deg;</span></div>
+          </div>
+        </div>
       </div>
 
       <div id="map" class="map-container"></div>
@@ -151,7 +147,8 @@
           </div>
           <button class="action-btn warning" onclick="command('RTL')">RTL</button>
           <button class="action-btn warning" onclick="command('LAND')">LAND</button>
-          <button class="action-btn" onclick="command('TAKEOFF')">TAKEOFF</button>
+          <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
+          <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
         </div>
         <div class="action-section">
           <div class="action-title">VEHICLE INFO</div>
@@ -161,6 +158,10 @@
           <div class="info-row"><span class="info-label">Firmware:</span><span id="i_firmware">---</span></div>
         </div>
       </div>
+    </div>
+
+    <div id="mapContextMenu" class="context-menu hidden">
+      <div onclick="flyToHere()">Fly to here</div>
     </div>
 
     <div id="console" class="hidden">
@@ -180,12 +181,15 @@
         <span id="s_mode" class="status-indicator">&#9679; Mode: ---</span>
         <span class="status-sep"></span>
         <span id="s_armed" class="status-indicator">&#9679; Disarmed</span>
+        <span class="status-sep"></span>
+        <span id="s_home" class="status-indicator">&#9679; Home: ---</span>
       </div>
     </div>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/grid.js?v=6"></script>
+  <script src="/static/js/app.js?v=6"></script>
 </body>
 </html>

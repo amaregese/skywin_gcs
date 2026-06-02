@@ -7,16 +7,12 @@
   <link rel="stylesheet" href="/static/css/style.css" />
   <style>
     body { overflow: hidden; }
-    #paramPage {
-      display: flex; flex-direction: column; height: 100vh;
-    }
+    #paramPage { display: flex; flex-direction: column; height: 100vh; }
     .param-header {
       display: flex; align-items: center; gap: 12px; padding: 8px 16px;
       background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0;
     }
-    .param-header h2 {
-      color: #e2e8f0; font-size: 15px; font-weight: 600; margin: 0;
-    }
+    .param-header h2 { color: #e2e8f0; font-size: 15px; font-weight: 600; margin: 0; }
     .param-header .back-btn {
       background: #334155; color: #e2e8f0; border: none; border-radius: 6px;
       padding: 6px 14px; font-size: 12px; cursor: pointer;
@@ -28,34 +24,66 @@
     }
     .param-header .refresh-btn:hover { background: #6d28d9; }
     .param-header .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .reboot-banner {
+      display: none; align-items: center; justify-content: space-between;
+      padding: 10px 16px; margin: 8px 16px; border-radius: 6px;
+      background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5; font-size: 13px; flex-shrink: 0;
+    }
+    .param-header .save-file-btn {
+      background: transparent; color: #22c55e; border: 1px solid #22c55e; border-radius: 6px;
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .param-header .save-file-btn:hover { background: #22c55e; color: #0f172a; }
+    .param-header .load-file-btn {
+      background: transparent; color: #eab308; border: 1px solid #eab308; border-radius: 6px;
+      padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .param-header .load-file-btn:hover { background: #eab308; color: #0f172a; }
     .param-search {
-      padding: 8px 16px; background: #0f172a; border-bottom: 1px solid #334155;
-      flex-shrink: 0;
+      padding: 8px 16px; background: #0f172a; border-bottom: 1px solid #334155; flex-shrink: 0;
     }
     .param-search input {
       width: 100%; background: #1e293b; color: #e2e8f0; border: 1px solid #334155;
-      border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
-      box-sizing: border-box;
+      border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none; box-sizing: border-box;
     }
     .param-search input:focus { border-color: #7c3aed; }
-    .param-table-wrap {
-      flex: 1; overflow-y: auto; overflow-x: auto;
+    .param-wrap { flex: 1; overflow-y: auto; }
+    .param-count {
+      color: #64748b; font-size: 12px; padding: 4px 16px 8px;
+      background: #0f172a; flex-shrink: 0; border-bottom: 1px solid #1e293b;
     }
-    .param-table {
-      width: 100%; border-collapse: collapse; font-size: 13px;
+    .param-status {
+      color: #eab308; font-size: 12px; padding: 4px 16px 8px;
+      background: #0f172a; flex-shrink: 0;
     }
-    .param-table th {
-      position: sticky; top: 0; background: #1e293b; color: #94a3b8;
-      padding: 8px 12px; text-align: left; font-weight: 600; font-size: 11px;
-      letter-spacing: 0.5px; border-bottom: 1px solid #334155; z-index: 1;
+    .cat-header {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      background: #1e293b; border-bottom: 1px solid #334155; cursor: pointer;
+      user-select: none; position: sticky; top: 0; z-index: 1;
     }
+    .cat-header:hover { background: #252f3f; }
+    .cat-header .arrow { color: #64748b; font-size: 10px; width: 14px; }
+    .cat-header .cat-name { color: #0ea5e9; font-size: 13px; font-weight: 600; }
+    .cat-header .cat-count { color: #64748b; font-size: 11px; margin-left: auto; }
+    .cat-body { display: none; }
+    .cat-body.open { display: block; }
+    .param-table { width: 100%; border-collapse: collapse; font-size: 13px; }
     .param-table td {
       padding: 6px 12px; border-bottom: 1px solid #1e293b; color: #e2e8f0;
     }
     .param-table tr:hover td { background: #1e293b; }
+    .param-table .param-idx { color: #475569; width: 40px; }
     .param-table .param-name {
       font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; color: #0ea5e9;
+      max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
+    .param-table .param-name[title] { cursor: help; border-bottom: 1px dotted #0ea5e9; }
+    .param-table .param-desc {
+      font-family: 'Segoe UI', sans-serif; font-size: 10px; color: #64748b;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block;
+    }
+    .param-table .param-type { color: #64748b; font-size: 11px; width: 50px; }
     .param-table .param-value input {
       background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
       border-radius: 4px; padding: 4px 8px; font-size: 12px; width: 100px;
@@ -68,14 +96,8 @@
       border-radius: 4px; padding: 3px 10px; font-size: 11px; cursor: pointer;
     }
     .param-table .save-btn:hover { background: #22c55e; color: #0f172a; }
-    .param-count {
-      color: #64748b; font-size: 12px; padding: 4px 16px 8px;
-      background: #0f172a; flex-shrink: 0; border-bottom: 1px solid #1e293b;
-    }
-    .param-status {
-      color: #eab308; font-size: 12px; padding: 4px 16px 8px;
-      background: #0f172a; flex-shrink: 0;
-    }
+    .param-table .changed-row td { background: rgba(234, 179, 8, 0.06); }
+    .param-table .changed-row .param-name { color: #eab308; }
   </style>
 </head>
 <body>
@@ -83,29 +105,24 @@
     <div class="param-header">
       <button class="back-btn" onclick="location.href='/'">&#8592; Dashboard</button>
       <h2>Full Parameter List</h2>
+      <button class="save-file-btn" onclick="saveParamFile()">&#x2193; Save</button>
+      <button class="load-file-btn" onclick="document.getElementById('paramFileInput').click()">&#x2191; Load</button>
+      <input type="file" id="paramFileInput" accept=".param,.txt" style="display:none" onchange="loadParamFile(event)" />
       <button class="refresh-btn" id="refreshBtn" onclick="requestParams()">&#x21bb; Refresh</button>
     </div>
-    <div class="param-search">
-      <input type="text" id="paramSearch" placeholder="Search parameters..." oninput="filterParams()" />
+    <div id="rebootBanner" class="reboot-banner" style="display:none"></div>
+    <div class="param-search" style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="paramSearch" placeholder="Search parameters..." oninput="filterParams()" style="flex:1" />
+      <label style="color:#94a3b8;font-size:12px;white-space:nowrap;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="changedOnly" onchange="filterParams()" />
+        Changed only
+      </label>
     </div>
     <div id="paramStatus" class="param-status" style="display:none"></div>
     <div id="paramCount" class="param-count">0 parameters loaded</div>
-    <div class="param-table-wrap">
-      <table class="param-table">
-        <thead>
-          <tr>
-            <th style="width:40px">#</th>
-            <th>Name</th>
-            <th style="width:40px">Type</th>
-            <th style="width:180px">Value</th>
-            <th style="width:70px"></th>
-          </tr>
-        </thead>
-        <tbody id="paramBody"></tbody>
-      </table>
-    </div>
+    <div id="paramWrap" class="param-wrap"></div>
   </div>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="/static/js/params.js"></script>
+  <script src="/static/js/params.js?v=6"></script>
 </body>
 </html>

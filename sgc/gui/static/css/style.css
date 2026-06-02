@@ -106,7 +106,7 @@ body {
 
 /* Map */
 .map-container {
-  flex: 1; position: relative; min-width: 400px;
+  flex: 1; position: relative; min-width: 400px; min-height: 400px;
 }
 #map { height: 100%; width: 100%; }
 
@@ -154,6 +154,7 @@ body {
   display: flex; flex-direction: column; height: 180px;
 }
 #console.hidden { display: none; }
+.hidden { display: none !important; }
 .console-header {
   color: #7c3aed; font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
   padding: 6px 12px; background: #1e293b; border-bottom: 1px solid #334155;
@@ -168,15 +169,27 @@ body {
 .log-success { color: #22c55e; }
 .log-warning { color: #eab308; }
 .log-error { color: #ef4444; }
-.log-mavlink { color: #0ea5e9; }
+
 .log-system { color: #7c3aed; font-weight: 600; }
 
 /* Status Bar */
 #statusbar {
-  display: flex; align-items: center; background: #1e293b;
-  border-top: 1px solid #334155; padding: 3px 12px; font-size: 12px;
-  flex-shrink: 0; height: 28px; color: #94a3b8;
+  display: flex; align-items: center; justify-content: space-between;
+  background: #1e293b; padding: 4px 12px;
+  border-top: 1px solid #334155; flex-shrink: 0; font-size: 12px;
 }
+
+/* Context Menu */
+.context-menu {
+  position: fixed; background: #1e293b; border: 1px solid #334155;
+  border-radius: 8px; padding: 4px; z-index: 10000; min-width: 140px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.context-menu div {
+  padding: 8px 14px; cursor: pointer; color: #e2e8f0; font-size: 13px;
+  border-radius: 4px;
+}
+.context-menu div:hover { background: #7c3aed; color: white; }
 #statusMessage { flex: 1; }
 .status-right { display: flex; align-items: center; gap: 0; }
 .status-indicator { padding: 0 8px; font-size: 12px; }
@@ -200,6 +213,13 @@ body {
   border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
 }
 .dialog-row input:focus { border-color: #7c3aed; }
+.dialog-row select {
+  flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+  border-radius: 6px; padding: 8px 12px; font-size: 13px; outline: none;
+}
+.dialog-row select:focus { border-color: #7c3aed; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dialog-actions .action-btn { padding: 8px 24px; font-size: 13px; }
 .dialog-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .dialog-btns button {
   padding: 8px 20px; border: none; border-radius: 6px; font-size: 12px;

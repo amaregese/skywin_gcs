@@ -9,7 +9,8 @@ try:
 except ImportError:
     serial = None
 
-from sgc.communication.connection_manager import MAVLinkConnection, FLIGHT_MODES
+from sgc.communication.connection_manager import MAVLinkConnection
+from sgc.gui.param_defs import get_metadata
 
 app = Flask(__name__, static_folder="gui/static", template_folder="gui/templates")
 app.config["SECRET_KEY"] = "sgc-secret"
@@ -17,6 +18,7 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 _connection = None
 _connection_lock = threading.Lock()
+_pending_reboot_conn = None  # (conn_str, baud) saved before reboot
 
 
 def _broadcast(event, data):
@@ -32,9 +34,8 @@ def _build_connection_string(conn_type, port, host, port_num):
         port_num = port_num or 5760
         return f"tcpin:0.0.0.0:{port_num}"
     elif conn_type in ("udp",):
-        host = host or "0.0.0.0"
         port_num = port_num or 14550
-        return f"udp:{host}:{port_num}"
+        return f"udpin:0.0.0.0:{port_num}"
     else:
         return port or "/dev/ttyACM0"
 
@@ -44,9 +45,19 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/plan")
+def plan_page():
+    return render_template("plan.html")
+
+
 @app.route("/params")
 def params_page():
     return render_template("params.html")
+
+
+@app.route("/tuning")
+def tuning_page():
+    return render_template("tuning.html")
 
 
 @app.route("/api/ports")
@@ -72,6 +83,101 @@ def auto_scan():
     return jsonify({"found": results})
 
 
+@app.route("/api/params/snapshot")
+def params_snapshot():
+    if not _connection or not _connection.running:
+        return jsonify({"params": [], "count": 0})
+    items = []
+    for name, info in _connection.params.items():
+        meta = get_metadata(name)
+        items.append({
+            "name": name,
+            "value": info["value"],
+            "type": info["type"],
+            "index": info.get("index", 0),
+            "count": len(_connection.params),
+            "description": meta.get("description", ""),
+            "human_name": meta.get("human_name", ""),
+            "units": meta.get("units", ""),
+            "range": meta.get("range", ""),
+            "reboot": meta.get("reboot", False),
+            "values": meta.get("values", {}),
+        })
+    items.sort(key=lambda p: p["index"])
+    max_count = max((info.get("count", 0) for info in _connection.params.values()), default=0)
+    return jsonify({"params": items, "count": max_count or len(items)})
+
+
+@app.route("/api/params/download")
+def download_params():
+    if not _connection or not _connection.running:
+        return "Not connected", 400
+    lines = []
+    for name, info in sorted(_connection.params.items(), key=lambda x: x[1].get("index", 9999)):
+        val = info["value"]
+        if isinstance(val, float):
+            val_str = f"{val:.6f}"
+        else:
+            val_str = str(val)
+        lines.append(f"{name}\t{val_str}")
+    content = "# SGC parameter export\n" + "\n".join(lines)
+    from flask import Response
+    return Response(
+        content,
+        mimetype="text/plain",
+        headers={"Content-Disposition": "attachment; filename=params.param"},
+    )
+
+
+@app.route("/api/params/upload", methods=["POST"])
+def upload_params():
+    if not _connection or not _connection.running:
+        return jsonify({"error": "Not connected"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file"}), 400
+    file = request.files["file"]
+    if not file:
+        return jsonify({"error": "Empty file"}), 400
+    try:
+        text = file.read().decode("utf-8")
+    except Exception:
+        return jsonify({"error": "Cannot read file"}), 400
+
+    count = 0
+    errors = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            continue
+        parts = line.replace("\t", " ").split(None, 1)
+        if len(parts) != 2:
+            continue
+        name, val_str = parts
+        try:
+            val = float(val_str)
+            _connection.set_param(name, val)
+            count += 1
+        except Exception as e:
+            errors.append(f"{name}: {e}")
+    return jsonify({"loaded": count, "errors": errors, "total": count + len(errors)})
+
+
+@app.route("/api/param_set", methods=["POST"])
+def api_param_set():
+    if not _connection or not _connection.running:
+        return jsonify({"error": "Not connected"}), 400
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data"}), 400
+    name = data.get("name", "")
+    value = data.get("value", 0)
+    try:
+        _connection.set_param(name, value)
+        return jsonify({"ok": True, "name": name, "value": value})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/state")
 def get_state():
     if _connection:
@@ -81,16 +187,15 @@ def get_state():
 
 @socketio.on("connect")
 def on_connect():
-    emit("log", {"message": "Connected to SGC server", "level": "system"})
-    emit("log", {"message": "SGC - Skywin Ground Control Station v0.1.0", "level": "system"})
-    emit("log", {"message": "Select port and click CONNECT to link with your flight controller.", "level": "info"})
     if _connection and _connection.running:
         emit("state_update", _connection.state)
 
 
 @socketio.on("connect_vehicle")
 def handle_connect(data):
-    global _connection
+    global _connection, _pending_reboot_conn
+
+    _pending_reboot_conn = None  # cancel any pending auto-reconnect
 
     with _connection_lock:
         if _connection and _connection.running:
@@ -113,9 +218,7 @@ def handle_connect(data):
             with _connection_lock:
                 _connection = conn
 
-            if conn.connect():
-                emit("log", {"message": "Real-time telemetry streaming active", "level": "system"})
-            else:
+            if not conn.connect():
                 with _connection_lock:
                     _connection = None
 
@@ -125,7 +228,8 @@ def handle_connect(data):
 
 @socketio.on("disconnect_vehicle")
 def handle_disconnect():
-    global _connection
+    global _connection, _pending_reboot_conn
+    _pending_reboot_conn = None  # cancel any pending auto-reconnect
     with _connection_lock:
         if _connection:
             _connection.disconnect()
@@ -168,6 +272,24 @@ def handle_command(data):
         elif cmd == "TAKEOFF":
             alt = data.get("altitude", 10)
             _connection.takeoff(alt)
+        elif cmd == "GUIDED_GOTO":
+            lat = data.get("lat", 0)
+            lon = data.get("lon", 0)
+            alt = data.get("altitude", 50)
+            _connection.set_mode("GUIDED")
+            _connection.goto_position(lat, lon, alt)
+
+
+@socketio.on("reboot_fcu")
+def handle_reboot():
+    global _connection, _pending_reboot_conn
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        _pending_reboot_conn = (_connection.connection_string, _connection.baud)
+        _connection.reboot()
+        emit("log", {"message": "Reboot command sent to FCU — will auto-reconnect when it comes back", "level": "info"})
 
 
 @socketio.on("param_request")
@@ -180,12 +302,19 @@ def handle_param_request():
         sid = request.sid
 
         def on_param(name, info, idx, count):
+            meta = get_metadata(name)
             payload = {
                 "name": name,
                 "value": info["value"],
                 "type": info["type"],
                 "index": idx,
                 "count": count,
+                "description": meta.get("description", ""),
+                "human_name": meta.get("human_name", ""),
+                "units": meta.get("units", ""),
+                "range": meta.get("range", ""),
+                "reboot": meta.get("reboot", False),
+                "values": meta.get("values", {}),
             }
             socketio.emit("param_value", payload, to=sid)
 
@@ -203,8 +332,64 @@ def handle_param_set(data):
         _connection.set_param(name, value)
 
 
+@socketio.on("mission_upload")
+def handle_mission_upload(data):
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        waypoints = data.get("waypoints", [])
+        _connection.upload_mission(waypoints)
+
+
+@socketio.on("mission_download")
+def handle_mission_download():
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+
+        def _on_mission(wps):
+            socketio.emit("mission_data", {"waypoints": wps, "count": len(wps)})
+
+        _connection.download_mission(callback=_on_mission)
+
+
 def _on_mavlink_event(event, data):
     if event == "log":
         _broadcast("log", data)
     elif event == "state_update":
         _broadcast("state_update", data)
+        if not data.get("connected", True) and _pending_reboot_conn:
+            thread = threading.Thread(target=_auto_reconnect, daemon=True)
+            thread.start()
+    elif event == "mission_upload_complete":
+        _broadcast("mission_upload_complete", data)
+
+
+def _auto_reconnect():
+    global _connection, _pending_reboot_conn
+    conn_str, baud = _pending_reboot_conn
+    _pending_reboot_conn = None  # only one attempt series
+
+    _broadcast("log", {"message": "FCU disconnected after reboot, waiting for it to come back...", "level": "info"})
+
+    for attempt in range(30):  # retry for ~60s
+        time.sleep(2)
+        with _connection_lock:
+            if _connection and _connection.running:
+                return  # already reconnected
+        try:
+            conn = MAVLinkConnection(conn_str, baud=baud)
+            conn.add_listener(_on_mavlink_event)
+            if conn.connect():
+                with _connection_lock:
+                    _connection = conn
+                _broadcast("log", {"message": "Auto-reconnected after reboot", "level": "success"})
+                return
+        except Exception:
+            pass
+        if (attempt + 1) % 5 == 0:
+            _broadcast("log", {"message": f"Waiting for FCU... ({attempt + 1}/30)", "level": "mavlink"})
+
+    _broadcast("log", {"message": "Auto-reconnect timed out — connect manually", "level": "error"})
