@@ -115,6 +115,13 @@ class MAVLinkConnection:
         self._mission_listeners = []
         self._mission_upload_phase = 0  # 0=idle, 1=clearing, 2=uploading, 3=done
 
+        self._tlog_file = None
+        self._inspector_active = False
+
+        self.fence_points = []  # list of (lat, lon)
+        self._fence_count = 0
+        self._fence_download_seq = None
+
     def add_listener(self, callback):
         self.listeners.append(callback)
 
@@ -198,6 +205,7 @@ class MAVLinkConnection:
 
     def disconnect(self):
         self.running = False
+        self.stop_tlog()
         if self.master:
             try:
                 self.master.close()
@@ -207,12 +215,114 @@ class MAVLinkConnection:
         self._emit("state_update", self.state)
         self._emit("log", {"message": "Disconnected", "level": "warning"})
 
+    def start_tlog(self, path):
+        try:
+            self._tlog_file = open(path, "w")
+            self._emit("log", {"message": f"TLOG started: {path}", "level": "success"})
+            return True
+        except Exception as e:
+            self._emit("log", {"message": f"TLOG start failed: {e}", "level": "error"})
+            return False
+
+    def stop_tlog(self):
+        if self._tlog_file:
+            try:
+                self._tlog_file.close()
+            except Exception:
+                pass
+        self._tlog_file = None
+        self._emit("log", {"message": "TLOG stopped", "level": "info"})
+
+    def _write_tlog(self, msg):
+        if self._tlog_file is None:
+            return
+        try:
+            msg_type = msg.get_type()
+            if msg_type == "BAD_DATA":
+                return
+            from datetime import datetime
+            ts = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            parts = []
+            for k, v in sorted(msg.__dict__.items()):
+                if k.startswith('_'):
+                    continue
+                if isinstance(v, float):
+                    parts.append(f"{k}={v:.4f}")
+                else:
+                    parts.append(f"{k}={v}")
+            line = f"[{ts}] {msg_type} " + " ".join(parts) + "\n"
+            self._tlog_file.write(line)
+        except Exception:
+            pass
+
+    def download_fence(self):
+        try:
+            self.fence_points = []
+            self._fence_count = 0
+            self._fence_download_seq = 0
+            self.master.mav.fence_fetch_point_send(
+                self.master.target_system, self.master.target_component, 0
+            )
+            self._emit("log", {"message": "Downloading fence...", "level": "info"})
+        except Exception as e:
+            self._emit("log", {"message": f"Fence download failed: {e}", "level": "error"})
+
+    def upload_fence(self, points):
+        try:
+            count = len(points)
+            self.set_param("FENCE_TOTAL", count)
+            for idx, (lat, lon) in enumerate(points):
+                self.master.mav.fence_point_send(
+                    self.master.target_system, self.master.target_component,
+                    idx, count, int(lat * 1e7), int(lon * 1e7),
+                )
+            self.fence_points = points[:]
+            self._emit("log", {"message": f"Uploaded {count} fence points", "level": "success"})
+            self._emit("fence_data", {"points": points, "count": count})
+            self._emit("fence_upload_complete", {"count": count, "success": True})
+        except Exception as e:
+            self._emit("log", {"message": f"Fence upload failed: {e}", "level": "error"})
+            self._emit("fence_upload_complete", {"count": 0, "success": False})
+
+    def clear_fence(self):
+        self.fence_points = []
+        self._fence_count = 0
+        self._fence_download_seq = None
+        self.set_param("FENCE_TOTAL", 0)
+        self._emit("log", {"message": "Fence cleared (FENCE_TOTAL=0)", "level": "info"})
+
+    def _emit_mavlink_inspector(self, msg):
+        try:
+            msg_type = msg.get_type()
+            if msg_type == "BAD_DATA":
+                return
+            fields = {}
+            for k, v in msg.__dict__.items():
+                if k.startswith('_'):
+                    continue
+                if isinstance(v, bytes):
+                    fields[k] = v.hex()
+                elif isinstance(v, float):
+                    fields[k] = round(v, 6)
+                else:
+                    fields[k] = v
+            self._emit("mavlink_raw", {
+                "type": msg_type,
+                "time": time.strftime('%H:%M:%S.') + f"{int(time.time() * 1000) % 1000:03d}",
+                "fields": fields,
+            })
+        except Exception:
+            pass
+
     def _read_loop(self):
         last_emit = 0
         while self.running:
             try:
                 msg = self.master.recv_match(blocking=True, timeout=0.05)
                 if msg:
+                    self._write_tlog(msg)
+                    if self._inspector_active:
+                        self._emit_mavlink_inspector(msg)
                     self._process_message(msg)
             except Exception as e:
                 err_str = str(e)
@@ -380,6 +490,9 @@ class MAVLinkConnection:
             elif self._mission_upload_phase == 2:
                 # Final ACK after all items sent
                 self._emit("log", {"message": f"Got MISSION_ACK: {result}", "level": "success" if mtype == 0 else "error"})
+                if mtype == 0:
+                    wps = self._mission_state or []
+                    self._emit("mission_data", {"waypoints": wps, "count": len(wps)})
                 self._emit("mission_upload_complete", {"result": result, "success": mtype == 0})
                 self._mission_state = None
                 self._mission_upload_phase = 0
@@ -429,6 +542,45 @@ class MAVLinkConnection:
                     self._mission_download_seq = None
                     self._mission_download_wps = []
                     self._mission_download_count = 0
+
+        elif msg_type == "FENCE_STATUS":
+            breach_type = getattr(msg, 'breach_type', 0)
+            breach_count = getattr(msg, 'breach_count', 0)
+            self._emit("log", {"message": f"FENCE_STATUS: breach_type={breach_type} count={breach_count}", "level": "info"})
+            if breach_type != 0 or breach_count != 0:
+                breach_names = {1: "BOUNDARY", 2: "MAXALT", 3: "MINALT"}
+                bname = breach_names.get(breach_type, f"UNKNOWN({breach_type})")
+                self._emit("log", {"message": f"FENCE_BREACH: {bname} count={breach_count}", "level": "warning"})
+            else:
+                self._emit("fence_breach_status", {"breach_type": 0, "breach_count": 0})
+
+        elif msg_type == "MISSION_CURRENT":
+            seq = getattr(msg, 'seq', -1)
+            if seq != getattr(self, '_last_mission_seq', -1):
+                self._last_mission_seq = seq
+                self._emit("log", {"message": f"MISSION_CURRENT: seq={seq}", "level": "info"})
+
+        elif msg_type == "FENCE_POINT":
+            if self._fence_download_seq is not None:
+                idx = getattr(msg, 'idx', 0)
+                count = getattr(msg, 'count', 0)
+                lat = getattr(msg, 'lat', 0) / 1e7
+                lng = getattr(msg, 'lng', 0) / 1e7
+                if idx < len(self.fence_points):
+                    self.fence_points[idx] = (lat, lng)
+                else:
+                    self.fence_points.append((lat, lng))
+                self._fence_count = count
+                if idx + 1 < count:
+                    self._fence_download_seq = idx + 1
+                    self.master.mav.fence_fetch_point_send(
+                        self.master.target_system, self.master.target_component,
+                        idx + 1,
+                    )
+                else:
+                    self._fence_download_seq = None
+                    self._emit("log", {"message": f"Downloaded {count} fence points", "level": "success"})
+                    self._emit("fence_data", {"points": self.fence_points, "count": count})
 
         else:
             pass
@@ -485,6 +637,8 @@ class MAVLinkConnection:
                 param1, param2, param3, param4,
                 param5, param6, param7,
             )
+            if hasattr(self.master, 'flush'):
+                self.master.flush()
             return True
         except Exception as e:
             self._emit("log", {"message": f"Command send failed: {e}", "level": "error"})
@@ -508,10 +662,12 @@ class MAVLinkConnection:
         return self.send_command(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0)
 
     def rtl(self):
-        return self.send_command(mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH)
+        result = self.set_mode("RTL")
+        self._emit("log", {"message": f"RTL set_mode returned {result}", "level": "info"})
 
     def land(self):
-        return self.set_mode("LAND")
+        result = self.set_mode("LAND")
+        self._emit("log", {"message": f"LAND set_mode returned {result}", "level": "info"})
 
     def takeoff(self, altitude=10):
         self.send_command(

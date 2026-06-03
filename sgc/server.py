@@ -1,7 +1,8 @@
 import math
+import os
 import threading
 import time
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 
 try:
@@ -19,9 +20,16 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 _connection = None
 _connection_lock = threading.Lock()
 _pending_reboot_conn = None  # (conn_str, baud) saved before reboot
+_last_mission = None  # last downloaded mission data
+_last_fence = None  # last downloaded fence data
+_log_buffer = []  # last 200 log messages
 
 
 def _broadcast(event, data):
+    if event == "log":
+        _log_buffer.append(data)
+        if len(_log_buffer) > 200:
+            _log_buffer[:] = _log_buffer[-200:]
     socketio.emit(event, data)
 
 
@@ -39,6 +47,12 @@ def _build_connection_string(conn_type, port, host, port_num):
     else:
         return port or "/dev/ttyACM0"
 
+
+@app.route("/logo.png")
+def logo():
+    return send_from_directory(
+        os.path.join(app.root_path, "..", "resources", "logo"), "swl.png"
+    )
 
 @app.route("/")
 def index():
@@ -58,6 +72,10 @@ def params_page():
 @app.route("/tuning")
 def tuning_page():
     return render_template("tuning.html")
+
+@app.route("/fence")
+def fence_page():
+    return render_template("fence.html")
 
 
 @app.route("/api/ports")
@@ -232,9 +250,45 @@ def handle_disconnect():
     _pending_reboot_conn = None  # cancel any pending auto-reconnect
     with _connection_lock:
         if _connection:
+            _connection.stop_tlog()
             _connection.disconnect()
             _connection = None
 
+@socketio.on("start_tlog")
+def handle_start_tlog(data=None):
+    conn = _connection
+    if not conn or not conn.running:
+        emit("log", {"message": "Not connected", "level": "error"})
+        return
+    logs_dir = os.path.join(app.root_path, "..", "logs")
+    os.makedirs(logs_dir, exist_ok=True)
+    fname = f"flight_{time.strftime('%Y%m%d_%H%M%S')}.log"
+    path = os.path.join(logs_dir, fname)
+    ok = conn.start_tlog(path)
+    if ok:
+        emit("tlog_status", {"active": True, "path": fname})
+
+@socketio.on("stop_tlog")
+def handle_stop_tlog():
+    conn = _connection
+    if conn:
+        conn.stop_tlog()
+    emit("tlog_status", {"active": False})
+
+
+@socketio.on("start_inspector")
+def handle_start_inspector():
+    conn = _connection
+    if conn:
+        conn._inspector_active = True
+    emit("inspector_status", {"active": True})
+
+@socketio.on("stop_inspector")
+def handle_stop_inspector():
+    conn = _connection
+    if conn:
+        conn._inspector_active = False
+    emit("inspector_status", {"active": False})
 
 @socketio.on("set_mode")
 def handle_set_mode(data):
@@ -265,19 +319,24 @@ def handle_command(data):
             emit("log", {"message": "Not connected", "level": "warning"})
             return
 
-        if cmd == "RTL":
-            _connection.rtl()
-        elif cmd == "LAND":
-            _connection.land()
-        elif cmd == "TAKEOFF":
-            alt = data.get("altitude", 10)
-            _connection.takeoff(alt)
-        elif cmd == "GUIDED_GOTO":
-            lat = data.get("lat", 0)
-            lon = data.get("lon", 0)
-            alt = data.get("altitude", 50)
-            _connection.set_mode("GUIDED")
-            _connection.goto_position(lat, lon, alt)
+        try:
+            if cmd == "RTL":
+                _connection.rtl()
+                _broadcast("log", {"message": "RTL command sent", "level": "info"})
+            elif cmd == "LAND":
+                _connection.land()
+                _broadcast("log", {"message": "LAND command sent", "level": "info"})
+            elif cmd == "TAKEOFF":
+                alt = data.get("altitude", 10)
+                _connection.takeoff(alt)
+            elif cmd == "GUIDED_GOTO":
+                lat = data.get("lat", 0)
+                lon = data.get("lon", 0)
+                alt = data.get("altitude", 50)
+                _connection.set_mode("GUIDED")
+                _connection.goto_position(lat, lon, alt)
+        except Exception as e:
+            _broadcast("log", {"message": f"Command error: {e}", "level": "error"})
 
 
 @socketio.on("reboot_fcu")
@@ -350,21 +409,159 @@ def handle_mission_download():
             return
 
         def _on_mission(wps):
-            socketio.emit("mission_data", {"waypoints": wps, "count": len(wps)})
+            global _last_mission
+            user_wps = [wp for wp in wps if wp.get('seq', 0) > 0]
+            _last_mission = {"waypoints": user_wps, "count": len(user_wps)}
+            socketio.emit("mission_data", _last_mission)
 
         _connection.download_mission(callback=_on_mission)
 
 
+@socketio.on("fence_download")
+def handle_fence_download():
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        _connection.download_fence()
+
+@socketio.on("fence_upload")
+def handle_fence_upload(data):
+    try:
+        print("__FENCE_UPLOAD_HANDLER_START__", flush=True)
+        _broadcast("log", {"message": "__FENCE_UPLOAD_HANDLER_START__", "level": "info"})
+        from pymavlink.dialects.v20.ardupilotmega import MAV_CMD_DO_FENCE_ENABLE
+        with _connection_lock:
+            if not (_connection and _connection.running):
+                emit("log", {"message": "Not connected", "level": "warning"})
+                return
+            points = data.get("points", [])
+            pts = [(p['lat'], p['lon']) for p in points]
+            _connection.upload_fence(pts)
+            r1 = _connection.set_param("FENCE_ACTION", 1)
+            r2 = _connection.set_param("FENCE_TYPE", 1)
+            _broadcast("log", {"message": f"set_param FENCE_ACTION={'OK' if r1 else 'FAIL'}, FENCE_TYPE={'OK' if r2 else 'FAIL'}", "level": "info"})
+            _connection.master.mav.command_long_send(
+                _connection.master.target_system,
+                _connection.master.target_component,
+                MAV_CMD_DO_FENCE_ENABLE, 0,
+                1, 0, 0, 0, 0, 0, 0,
+            )
+            _broadcast("log", {"message": "Reading back fence params to verify...", "level": "info"})
+            def on_param(name, info, idx, count):
+                if name in ("FENCE_ACTION", "FENCE_TYPE", "FENCE_TOTAL", "FENCE_ENABLE"):
+                    _broadcast("log", {"message": f"  {name} = {info['value']}", "level": "info"})
+                    if name == "FENCE_ENABLE":
+                        _connection._param_listeners.remove(on_param)
+            _connection._param_listeners.append(on_param)
+            _connection.master.mav.param_request_read_send(
+                _connection.master.target_system, _connection.master.target_component,
+                b'FENCE_ACTION\x00\x00\x00\x00', -1,
+            )
+            _connection.master.mav.param_request_read_send(
+                _connection.master.target_system, _connection.master.target_component,
+                b'FENCE_TYPE\x00\x00\x00\x00', -1,
+            )
+            _connection.master.mav.param_request_read_send(
+                _connection.master.target_system, _connection.master.target_component,
+                b'FENCE_TOTAL\x00\x00\x00\x00', -1,
+            )
+            _connection.master.mav.param_request_read_send(
+                _connection.master.target_system, _connection.master.target_component,
+                b'FENCE_ENABLE\x00\x00\x00\x00', -1,
+            )
+            # Force FENCE_STATUS message from FCU
+            import pymavlink.dialects.v20.ardupilotmega as _mav2
+            _connection.master.mav.command_long_send(
+                _connection.master.target_system, _connection.master.target_component,
+                _mav2.MAV_CMD_REQUEST_MESSAGE, 0,
+                157, 0, 0, 0, 0, 0, 0,  # msg 157 = FENCE_STATUS
+            )
+    except Exception as e:
+        _broadcast("log", {"message": f"__FENCE_UPLOAD_CRASHED__: {e}", "level": "error"})
+
+@socketio.on("fence_clear")
+def handle_fence_clear():
+    with _connection_lock:
+        if _connection:
+            _connection.clear_fence()
+            emit("fence_data", {"points": [], "count": 0})
+
+@socketio.on("fence_enable")
+def handle_fence_enable(data):
+    from pymavlink.dialects.v20.ardupilotmega import MAV_CMD_DO_FENCE_ENABLE
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        enable = data.get("enable", True)
+        if enable:
+            r1 = _connection.set_param("FENCE_ACTION", 1)
+            r2 = _connection.set_param("FENCE_TYPE", 1)
+            _broadcast("log", {"message": f"set_param FENCE_ACTION={'OK' if r1 else 'FAIL'}, FENCE_TYPE={'OK' if r2 else 'FAIL'}", "level": "info"})
+            _connection.master.mav.command_long_send(
+                _connection.master.target_system,
+                _connection.master.target_component,
+                MAV_CMD_DO_FENCE_ENABLE, 0,
+                1, 0, 0, 0, 0, 0, 0,
+            )
+            _broadcast("log", {"message": "Fence enabled (params first, then DO_FENCE_ENABLE)", "level": "info"})
+        else:
+            from pymavlink.dialects.v20.ardupilotmega import MAV_CMD_DO_FENCE_ENABLE
+            _connection.master.mav.command_long_send(
+                _connection.master.target_system,
+                _connection.master.target_component,
+                MAV_CMD_DO_FENCE_ENABLE, 0,
+                0, 0, 0, 0, 0, 0, 0,
+            )
+            _broadcast("log", {"message": "Fence disabled", "level": "info"})
+
 def _on_mavlink_event(event, data):
+    global _last_mission, _last_fence
     if event == "log":
         _broadcast("log", data)
     elif event == "state_update":
         _broadcast("state_update", data)
-        if not data.get("connected", True) and _pending_reboot_conn:
-            thread = threading.Thread(target=_auto_reconnect, daemon=True)
-            thread.start()
+        if not data.get("connected", True):
+            _last_mission = None
+            _last_fence = None
+            _broadcast("mission_data", {"waypoints": [], "count": 0})
+            _broadcast("fence_data", {"points": [], "count": 0})
+            if _pending_reboot_conn:
+                thread = threading.Thread(target=_auto_reconnect, daemon=True)
+                thread.start()
+    elif event == "mission_data":
+        _last_mission = data
+        _broadcast("mission_data", data)
     elif event == "mission_upload_complete":
         _broadcast("mission_upload_complete", data)
+    elif event == "mavlink_raw":
+        _broadcast("mavlink_raw", data)
+    elif event == "inspector_status":
+        _broadcast("inspector_status", data)
+    elif event == "fence_data":
+        _last_fence = data
+        _broadcast("fence_data", data)
+    elif event == "fence_upload_complete":
+        _broadcast("fence_upload_complete", data)
+
+
+@socketio.on("request_mission")
+def handle_request_mission():
+    if _last_mission:
+        emit("mission_data", _last_mission)
+
+
+@socketio.on("request_fence")
+def handle_request_fence():
+    if _last_fence:
+        emit("fence_data", _last_fence)
+
+
+@socketio.on("request_logs")
+def handle_request_logs():
+    for msg in _log_buffer:
+        emit("log", msg)
 
 
 def _auto_reconnect():
