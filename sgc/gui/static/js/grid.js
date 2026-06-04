@@ -45,6 +45,8 @@ if (typeof L !== 'undefined') {
   });
 
   window.addGrid = function(map) {
-    map.addLayer(new L.Grid());
+    var g = new L.Grid();
+    map.addLayer(g);
+    return g;
   };
 }

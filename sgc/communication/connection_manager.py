@@ -272,9 +272,12 @@ class MAVLinkConnection:
             count = len(points)
             self.set_param("FENCE_TOTAL", count)
             for idx, (lat, lon) in enumerate(points):
+                lat_e7 = int(lat * 1e7)
+                lon_e7 = int(lon * 1e7)
+                self._emit("log", {"message": f"FENCE_POINT[{idx}]: lat={lat:.7f} lon={lon:.7f}  (degE7: {lat_e7}, {lon_e7})", "level": "info"})
                 self.master.mav.fence_point_send(
                     self.master.target_system, self.master.target_component,
-                    idx, count, int(lat * 1e7), int(lon * 1e7),
+                    idx, count, lat_e7, lon_e7,
                 )
             self.fence_points = points[:]
             self._emit("log", {"message": f"Uploaded {count} fence points", "level": "success"})
@@ -375,6 +378,10 @@ class MAVLinkConnection:
             )
             if msg.battery_remaining >= 0:
                 self.state["battery_remaining"] = msg.battery_remaining
+            self.state["sensor_health"] = getattr(msg, 'onboard_control_sensors_health', 0)
+            self.state["sensor_enabled"] = getattr(msg, 'onboard_control_sensors_enabled', 0)
+            self.state["sensor_present"] = getattr(msg, 'onboard_control_sensors_present', 0)
+            self.state["cpu_load"] = round(getattr(msg, 'load', 0) / 10.0, 1)
 
         elif msg_type == "SCALED_PRESSURE":
             press_abs = getattr(msg, 'press_abs', 1013.25)
@@ -411,6 +418,15 @@ class MAVLinkConnection:
             self.state["ground_speed"] = round(getattr(msg, 'groundspeed', 0), 2)
             self.state["heading"] = getattr(msg, 'heading', 0)
             self.state["throttle"] = getattr(msg, 'throttle', 0)
+
+        elif msg_type == "EKF_STATUS_REPORT":
+            self.state["ekf_flags"] = getattr(msg, 'flags', 0)
+            self.state["ekf_pos_horiz_variance"] = round(getattr(msg, 'pos_horiz_variance', 0), 4)
+            self.state["ekf_pos_vert_variance"] = round(getattr(msg, 'pos_vert_variance', 0), 4)
+            self.state["ekf_compass_variance"] = round(getattr(msg, 'compass_variance', 0), 4)
+            self.state["ekf_vel_variance"] = round(getattr(msg, 'velocity_variance', 0), 4)
+            self.state["ekf_terrain_variance"] = round(getattr(msg, 'terrain_alt_variance', 0), 4)
+            self.state["ekf_airspeed_variance"] = round(getattr(msg, 'airspeed_variance', 0), 4)
 
         elif msg_type == "BATTERY_STATUS":
             voltages = [v for v in getattr(msg, 'voltages', []) if v > 0]
@@ -546,7 +562,6 @@ class MAVLinkConnection:
         elif msg_type == "FENCE_STATUS":
             breach_type = getattr(msg, 'breach_type', 0)
             breach_count = getattr(msg, 'breach_count', 0)
-            self._emit("log", {"message": f"FENCE_STATUS: breach_type={breach_type} count={breach_count}", "level": "info"})
             if breach_type != 0 or breach_count != 0:
                 breach_names = {1: "BOUNDARY", 2: "MAXALT", 3: "MINALT"}
                 bname = breach_names.get(breach_type, f"UNKNOWN({breach_type})")
@@ -682,6 +697,23 @@ class MAVLinkConnection:
             0,  # do not reboot companion
             0,  # action on next reboots
         )
+
+    def calibrate(self, cal_type):
+        params = {
+            'gyro':       (1, 0, 0, 0, 0, 0, 0),
+            'mag':        (0, 1, 0, 0, 0, 0, 0),
+            'pressure':   (0, 0, 1, 0, 0, 0, 0),
+            'radio':      (0, 0, 0, 1, 0, 0, 0),
+            'accel':      (0, 0, 0, 0, 1, 0, 0),
+            'compass_mot':(0, 0, 0, 0, 0, 1, 0),
+            'level':      (0, 0, 0, 0, 0, 0, 1),
+        }
+        p = params.get(cal_type)
+        if not p:
+            self._emit("log", {"message": f"Unknown calibration type: {cal_type}", "level": "error"})
+            return False
+        self._emit("log", {"message": f"Starting {cal_type} calibration...", "level": "info"})
+        return self.send_command(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, *p)
 
     def request_params(self, callback=None):
         if not self.master or not self.running:

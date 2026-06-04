@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Configuration</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <style>
+    #configMain {
+      flex: 1; display: flex; gap: 12px; padding: 12px; overflow-y: auto;
+      align-items: flex-start; justify-content: center;
+    }
+    .config-panel {
+      background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+      padding: 20px; max-width: 520px; width: 100%;
+    }
+    .config-panel h2 {
+      color: #e2e8f0; font-size: 16px; font-weight: 700; margin: 0 0 4px;
+    }
+    .config-panel .sub {
+      color: #64748b; font-size: 12px; margin: 0 0 16px;
+    }
+    .cal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .cal-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      border: 1px solid #334155; border-radius: 10px; padding: 14px 10px;
+      cursor: pointer; background: #0f172a; color: #e2e8f0; text-align: center;
+      transition: all 0.15s; font-family: inherit;
+    }
+    .cal-btn:hover { border-color: #7c3aed; background: #1e293b; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(124,58,237,0.2); }
+    .cal-btn:active { transform: translateY(0); }
+    .cal-btn-icon { font-size: 22px; line-height: 1; color: #7c3aed; margin-bottom: 2px; }
+    .cal-btn-label { font-size: 13px; font-weight: 700; }
+    .cal-btn-desc { font-size: 10px; color: #64748b; line-height: 1.3; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <nav id="menubar">
+      <div class="menu-title">SGC - Configuration</div>
+    </nav>
+
+    <div id="toolbar">
+      <button class="toolbar-back" onclick="location.href='/'">&#8592;</button>
+      <button id="connectBtn" onclick="toggleConnection()">CONNECT</button>
+      <div class="toolbar-sep"></div>
+      <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
+      <span id="sysidInd" class="indicator">SysID: --</span>
+      <span class="toolbar-sep"></span>
+      <span id="tt_type" class="indicator off">Type: ---</span>
+      <span id="tt_firmware" class="indicator off">FW: ---</span>
+      <span id="tt_cpu_load" class="indicator off">CPU: ---</span>
+      <span class="toolbar-sep"></span>
+      <button id="tlogBtn" class="tlog-btn" onclick="toggleTlog()">&#9679; LOG</button>
+    </div>
+    <img src="/logo.png" id="logoLine" alt="SGC">
+
+    <div id="main" style="flex-direction:column">
+      <div id="configMain">
+        <div class="config-panel">
+          <h2>Sensor Calibration</h2>
+          <p class="sub">Run calibration routines to ensure your sensors are accurate.</p>
+          <div class="cal-grid">
+            <button class="cal-btn" onclick="startCalibration('gyro')">
+              <span class="cal-btn-icon">&#9733;</span>
+              <span class="cal-btn-label">Gyroscope</span>
+              <span class="cal-btn-desc">Calibrate gyro sensor for accurate attitude</span>
+            </button>
+            <button class="cal-btn" onclick="startCalibration('accel')">
+              <span class="cal-btn-icon">&#9651;</span>
+              <span class="cal-btn-label">Accelerometer</span>
+              <span class="cal-btn-desc">6-position level calibration</span>
+            </button>
+            <button class="cal-btn" onclick="startCalibration('mag')">
+              <span class="cal-btn-icon">&#9678;</span>
+              <span class="cal-btn-label">Compass</span>
+              <span class="cal-btn-desc">Magnetometer calibration</span>
+            </button>
+            <button class="cal-btn" onclick="startCalibration('level')">
+              <span class="cal-btn-icon">&#9644;</span>
+              <span class="cal-btn-label">Level Horizon</span>
+              <span class="cal-btn-desc">Trim accelerometer level</span>
+            </button>
+            <button class="cal-btn" onclick="startCalibration('radio')">
+              <span class="cal-btn-icon">&#9654;</span>
+              <span class="cal-btn-label">Radio</span>
+              <span class="cal-btn-desc">RC transmitter calibration</span>
+            </button>
+            <button class="cal-btn" onclick="startCalibration('pressure')">
+              <span class="cal-btn-icon">&#9729;</span>
+              <span class="cal-btn-label">Pressure</span>
+              <span class="cal-btn-desc">Barometer calibration</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="consolePanel" class="console-panel" style="display:flex">
+      <div class="rc-header">
+        <span>CONSOLE</span>
+      </div>
+      <div id="consoleOutput"></div>
+    </div>
+
+    <div id="statusbar">
+      <span id="statusMessage">Configuration</span>
+    </div>
+  </div>
+
+  <div id="calModal" class="cal-modal hidden">
+    <div class="cal-modal-content">
+      <div class="cal-modal-header">
+        <span id="calTitle">Calibration</span>
+        <span class="cal-close" onclick="abortCalibration()">&times;</span>
+      </div>
+      <div id="calBody" class="cal-body">
+        <div id="calInstruction" class="cal-instruction">Preparing calibration...</div>
+        <div id="calProgress" class="cal-progress">
+          <div id="calProgressBar" class="cal-progress-bar"></div>
+        </div>
+        <div id="calStatus" class="cal-status"></div>
+      </div>
+      <div class="cal-modal-footer">
+        <button id="calAbortBtn" class="action-btn danger" onclick="abortCalibration()">Abort</button>
+        <button id="calContinueBtn" class="action-btn success hidden" onclick="continueCalibration()">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/static/js/toolbar.js?v=10"></script>
+  <script src="/static/js/app.js?v=10"></script>
+</body>
+</html>

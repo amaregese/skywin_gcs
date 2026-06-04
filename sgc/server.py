@@ -78,6 +78,11 @@ def fence_page():
     return render_template("fence.html")
 
 
+@app.route("/config")
+def config_page():
+    return render_template("config.html")
+
+
 @app.route("/api/ports")
 def list_ports():
     ports = []
@@ -89,16 +94,23 @@ def list_ports():
 
 @app.route("/api/auto_scan")
 def auto_scan():
-    baud = request.args.get("baud", 57600, type=int)
-    timeout = request.args.get("timeout", 2, type=int)
+    timeout = request.args.get("timeout", 0.5, type=float)
 
-    def _scan():
+    baud_list = request.args.getlist("baud", type=int)
+    if not baud_list:
+        baud_list = [57600, 115200, 921600, 38400]
+
+    all_results = {}
+    for baud in baud_list:
+        if len(all_results) >= 5:
+            break
         results = MAVLinkConnection.detect_ports(baud=baud, timeout=timeout)
-        return jsonify({"found": results})
-
-    thread = threading.Thread(target=lambda: None)
-    results = MAVLinkConnection.detect_ports(baud=baud, timeout=timeout)
-    return jsonify({"found": results})
+        for r in results:
+            dev = r["device"]
+            if dev not in all_results:
+                r["baud"] = baud
+                all_results[dev] = r
+    return jsonify({"found": list(all_results.values())})
 
 
 @app.route("/api/params/snapshot")
@@ -349,6 +361,16 @@ def handle_reboot():
         _pending_reboot_conn = (_connection.connection_string, _connection.baud)
         _connection.reboot()
         emit("log", {"message": "Reboot command sent to FCU — will auto-reconnect when it comes back", "level": "info"})
+
+
+@socketio.on("calibrate")
+def handle_calibrate(data):
+    cal_type = data.get("type", "")
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        _connection.calibrate(cal_type)
 
 
 @socketio.on("param_request")

@@ -35,11 +35,13 @@ socket.on('state_update', (data) => {
     window._reqMissionFence = false;
     fencePoints = [];
     wpOverlayPoints = [];
+    _homePos = null;
     if (wpGroup) wpGroup.clearLayers();
     renderFence();
   }
   if (data.lat && data.lon && vehicleMarker) {
     vehicleMarker.setLatLng([data.lat, data.lon]);
+    _homePos = { lat: data.lat, lon: data.lon };
     if (!mapInitialized) {
       map.setView([data.lat, data.lon], 16);
       mapInitialized = true;
@@ -68,8 +70,15 @@ socket.on('mission_data', (data) => {
 // --- Map ---
 function initMap(lat, lon) {
   map = L.map('map', { center: [lat, lon], zoom: 16, zoomControl: true, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-  addGrid(map);
+
+  var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+  var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
+  var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
+
+  osm.addTo(map);
+
+  var gridLayer = addGrid(map);
 
   vehicleMarker = L.marker([lat, lon], {
     icon: L.divIcon({
@@ -80,6 +89,16 @@ function initMap(lat, lon) {
   }).addTo(map);
 
   wpGroup = L.layerGroup().addTo(map);
+
+  L.control.layers({
+    'Street': osm,
+    'Satellite': sat,
+    'Topo': topo,
+    'Dark': dark,
+  }, {
+    'Grid': gridLayer,
+    'Waypoints': wpGroup,
+  }, { position: 'topright' }).addTo(map);
 
   map.on('click', function(e) {
     addFencePoint(e.latlng.lat, e.latlng.lng);
@@ -231,9 +250,22 @@ function drawWaypointsOverlay() {
     });
     wpGroup.addLayer(marker);
   });
-  if (pts.length > 1) {
+  if (pts.length >= 1) {
     wpGroup.addLayer(L.polyline(pts, {
       color: '#0ea5e9', weight: 2, opacity: 0.5, dashArray: '6,4', interactive: false,
+    }));
+  }
+  if (_homePos && pts.length > 0) {
+    wpGroup.addLayer(L.marker([_homePos.lat, _homePos.lon], {
+      icon: L.divIcon({
+        className: 'home-marker-overlay',
+        html: '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:#22c55e;color:#fff;border:2px solid #fff;border-radius:50%;font-size:12px;font-weight:bold;box-shadow:0 0 8px rgba(34,197,94,0.5);">H</span>',
+        iconSize: [24, 24], iconAnchor: [12, 12],
+      }),
+      interactive: false,
+    }));
+    wpGroup.addLayer(L.polyline([[_homePos.lat, _homePos.lon], pts[0]], {
+      color: '#22c55e', weight: 2, opacity: 0.4, dashArray: '4,4', interactive: false,
     }));
   }
 }
@@ -288,95 +320,12 @@ document.getElementById('fenceFileInput').onchange = function(e) {
 
 // --- Connection Helpers ---
 function toggleConnection() {
-  if (isConnected) {
+  var btn = document.getElementById('connectBtn');
+  if (btn && btn.classList.contains('connected')) {
     socket.emit('disconnect_vehicle');
   } else {
     showConnectDialog();
   }
-}
-
-function showConnectDialog() {
-  var overlay = document.createElement('div');
-  overlay.className = 'dialog-overlay';
-  overlay.innerHTML = `
-    <div class="dialog-box" style="width:420px">
-      <h3>Connect to Vehicle</h3>
-      <div class="dialog-row">
-        <label>Type:</label>
-        <select id="connType" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-          <option value="sitl">SITL (UDP 127.0.0.1:14550)</option>
-          <option value="serial">Serial Port</option>
-          <option value="tcp_client">TCP Client</option>
-          <option value="tcp_server">TCP Server</option>
-          <option value="udp">UDP (listen)</option>
-        </select>
-      </div>
-      <div id="connSerial" style="display:none">
-        <div class="dialog-row">
-          <label>Port:</label>
-          <select id="dialPort" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;"></select>
-        </div>
-        <div class="dialog-row">
-          <label>Baud:</label>
-          <select id="dialBaud" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-            <option>9600</option><option>19200</option><option>38400</option>
-            <option selected>57600</option><option>115200</option><option>921600</option>
-          </select>
-        </div>
-      </div>
-      <div id="connNet" style="display:none">
-        <div class="dialog-row">
-          <label>Host:</label>
-          <input type="text" id="dialHost" value="127.0.0.1" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-        </div>
-        <div class="dialog-row">
-          <label>Port:</label>
-          <input type="text" id="dialPortNum" value="5760" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-        </div>
-      </div>
-      <div class="dialog-btns">
-        <button class="secondary" onclick="this.closest('.dialog-overlay').remove()">Cancel</button>
-        <button class="primary" onclick="doConnect()">Connect</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  var typeSel = overlay.querySelector('#connType');
-  var serialDiv = overlay.querySelector('#connSerial');
-  var netDiv = overlay.querySelector('#connNet');
-  typeSel.onchange = function() {
-    serialDiv.style.display = this.value === 'serial' ? '' : 'none';
-    netDiv.style.display = (this.value === 'tcp_client' || this.value === 'tcp_server' || this.value === 'udp') ? '' : 'none';
-  };
-  // populate serial ports
-  fetch('/api/ports').then(function(r) { return r.json(); }).then(function(ports) {
-    var sel = overlay.querySelector('#dialPort');
-    sel.innerHTML = '';
-    if (ports.length === 0) { sel.innerHTML = '<option value="">No ports found</option>'; }
-    ports.forEach(function(p) {
-      var o = document.createElement('option');
-      o.value = p.device;
-      o.textContent = p.device + '  (' + p.description + ')';
-      sel.appendChild(o);
-    });
-  }).catch(function() {});
-}
-
-function doConnect() {
-  var type = document.querySelector('#connType').value;
-  var port = document.querySelector('#dialPort')?.value || '';
-  var baud = document.querySelector('#dialBaud')?.value || '57600';
-  var host = document.querySelector('#dialHost')?.value || '';
-  var portNum = document.querySelector('#dialPortNum')?.value || '0';
-  if (type === 'sitl') {
-    socket.emit('connect_vehicle', { type: 'udp', port: '', baud: 57600, host: '127.0.0.1', port_num: 14550 });
-  } else if (type === 'serial') {
-    if (!port) { alert('Select a serial port'); return; }
-    socket.emit('connect_vehicle', { type: 'serial', port: port, baud: parseInt(baud), host: '', port_num: 0 });
-  } else {
-    socket.emit('connect_vehicle', { type: type, port: '', baud: parseInt(baud), host: host, port_num: parseInt(portNum) || 0 });
-  }
-  document.querySelector('.dialog-overlay').remove();
 }
 
 function disconnectVehicle() {

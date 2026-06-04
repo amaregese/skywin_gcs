@@ -42,6 +42,7 @@
       <div class="menu-item"><span>Config</span>
         <div class="menu-dropdown">
           <div onclick="menuAction('Vehicle Setup')">Vehicle Setup</div>
+          <div onclick="location.href='/config'">Calibration</div>
           <div onclick="menuAction('Parameter Editor')">Parameter Editor</div>
           <div onclick="location.href='/params'">Full Parameter List</div>
           <hr/>
@@ -76,6 +77,10 @@
       <div class="toolbar-sep"></div>
       <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
       <span id="sysidInd" class="indicator">SysID: --</span>
+      <span class="toolbar-sep"></span>
+      <span id="tt_type" class="indicator off">Type: ---</span>
+      <span id="tt_firmware" class="indicator off">FW: ---</span>
+      <span id="tt_cpu_load" class="indicator off">CPU: ---</span>
       <span class="toolbar-sep"></span>
       <button id="tlogBtn" class="tlog-btn" onclick="toggleTlog()">&#9679; LOG</button>
     </div>
@@ -167,37 +172,74 @@
       <div id="map" class="map-container"></div>
 
       <div id="actionPanel">
-        <div class="action-section">
-          <div class="action-title">FLIGHT MODE</div>
-          <select id="flightModeSelect">
-            <option>STABILIZE</option><option>ACRO</option><option>ALT_HOLD</option>
-            <option>AUTO</option><option selected>GUIDED</option><option>LOITER</option>
-            <option>RTL</option><option>CIRCLE</option><option>LAND</option>
-            <option>DRIFT</option><option>SPORT</option><option>FLIP</option>
-            <option>AUTOTUNE</option><option>POSHOLD</option><option>BRAKE</option>
-            <option>THROW</option><option>AVOID_ADSB</option><option>GUIDED_NOGPS</option>
-            <option>SMART_RTL</option><option>FLOWHOLD</option><option>FOLLOW</option>
-            <option>ZIGZAG</option><option>SYSTEM_ID</option><option>AUTOROTATE</option><option>AUTO_RTL</option>
-          </select>
-          <button class="action-btn" onclick="setMode()">SET MODE</button>
+        <div id="actionTabs">
+          <span class="action-tab active" data-tab="control" onclick="switchActionTab('control')">CONTROL</span>
+          <span class="action-tab" data-tab="health" onclick="switchActionTab('health')">HEALTH</span>
+          <span class="action-tab" data-tab="stats" onclick="switchActionTab('stats')">STATS</span>
         </div>
-        <div class="action-section">
-          <div class="action-title">VEHICLE CONTROL</div>
-          <div class="btn-row">
-            <button class="action-btn success" onclick="arm()">ARM</button>
-            <button class="action-btn danger" onclick="disarm()">DISARM</button>
+        <div id="controlPanel">
+          <div class="action-section">
+            <div class="action-title">FLIGHT MODE</div>
+            <select id="flightModeSelect">
+              <option>STABILIZE</option><option>ACRO</option><option>ALT_HOLD</option>
+              <option>AUTO</option><option selected>GUIDED</option><option>LOITER</option>
+              <option>RTL</option><option>CIRCLE</option><option>LAND</option>
+              <option>DRIFT</option><option>SPORT</option><option>FLIP</option>
+              <option>AUTOTUNE</option><option>POSHOLD</option><option>BRAKE</option>
+              <option>THROW</option><option>AVOID_ADSB</option><option>GUIDED_NOGPS</option>
+              <option>SMART_RTL</option><option>FLOWHOLD</option><option>FOLLOW</option>
+              <option>ZIGZAG</option><option>SYSTEM_ID</option><option>AUTOROTATE</option><option>AUTO_RTL</option>
+            </select>
+            <button class="action-btn" onclick="setMode()">SET MODE</button>
           </div>
-          <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
-          <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
-          <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
-          <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
+          <div class="action-section">
+            <div class="action-title">VEHICLE CONTROL</div>
+            <div class="btn-row">
+              <button class="action-btn success" onclick="arm()">ARM</button>
+              <button class="action-btn danger" onclick="disarm()">DISARM</button>
+            </div>
+            <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
+            <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
+            <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
+            <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
+          </div>
         </div>
-        <div class="action-section">
-          <div class="action-title">VEHICLE INFO</div>
-          <div class="info-row"><span class="info-label">SysID:</span><span id="i_sysid">---</span></div>
-          <div class="info-row"><span class="info-label">CompID:</span><span id="i_compid">---</span></div>
-          <div class="info-row"><span class="info-label">Type:</span><span id="i_type">---</span></div>
-          <div class="info-row"><span class="info-label">Firmware:</span><span id="i_firmware">---</span></div>
+        <div id="healthPanel" class="hidden">
+          <div class="action-section">
+            <div class="action-title">SENSOR HEALTH</div>
+            <div id="sensorIndicators" class="sensor-grid">
+              <div class="sensor-item" data-sensor="gyro"><span class="sensor-dot" id="s_gyro"></span><span>Gyro</span></div>
+              <div class="sensor-item" data-sensor="accel"><span class="sensor-dot" id="s_accel"></span><span>Accel</span></div>
+              <div class="sensor-item" data-sensor="mag"><span class="sensor-dot" id="s_mag"></span><span>Mag</span></div>
+              <div class="sensor-item" data-sensor="gps"><span class="sensor-dot" id="s_gps_sens"></span><span>GPS</span></div>
+              <div class="sensor-item" data-sensor="baro"><span class="sensor-dot" id="s_baro"></span><span>Baro</span></div>
+              <div class="sensor-item" data-sensor="rc"><span class="sensor-dot" id="s_rc"></span><span>RC</span></div>
+              <div class="sensor-item" data-sensor="ahrs"><span class="sensor-dot" id="s_ahrs"></span><span>AHRS</span></div>
+              <div class="sensor-item" data-sensor="battery"><span class="sensor-dot" id="s_batt_sens"></span><span>Batt</span></div>
+            </div>
+            <hr class="section-sep">
+            <div class="ekf-section" id="ekfSection">
+              <div class="action-title" style="font-size:10px;margin-top:2px">EKF</div>
+              <table class="ekf-table">
+                <tr><td class="ekf-label">H-Pos</td><td class="ekf-label">V-Pos</td></tr>
+                <tr><td class="ekf-val" id="ekf_hpos">---</td><td class="ekf-val" id="ekf_vpos">---</td></tr>
+                <tr><td class="ekf-label">Vel</td><td class="ekf-label">Mag</td></tr>
+                <tr><td class="ekf-val" id="ekf_vel">---</td><td class="ekf-val" id="ekf_mag">---</td></tr>
+              </table>
+              <div style="margin-top:1px;font-size:7px;color:#475569">Flags: <span id="ekf_flags">---</span></div>
+            </div>
+          </div>
+        </div>
+        <div id="statsPanel" class="hidden">
+          <div class="action-section">
+            <div class="action-title">FLIGHT STATS</div>
+            <table class="ekf-table">
+              <tr><td class="ekf-label">Max Alt</td><td class="ekf-label">Max GS</td></tr>
+              <tr><td class="ekf-val" id="fs_max_alt">---</td><td class="ekf-val" id="fs_max_gs">---</td></tr>
+              <tr><td class="ekf-label">Max Dist</td><td class="ekf-label">Flight Time</td></tr>
+              <tr><td class="ekf-val" id="fs_max_dist">---</td><td class="ekf-val" id="fs_flight_time">00:00</td></tr>
+            </table>
+          </div>
         </div>
         <div id="rightConsole">
           <div class="rc-header">
@@ -213,6 +255,28 @@
       <div onclick="flyToHere()">Fly to here</div>
       <div onclick="startMeasuring()">Start Measuring</div>
     </div>
+
+    <div id="calModal" class="cal-modal hidden">
+      <div class="cal-modal-content">
+        <div class="cal-modal-header">
+          <span id="calTitle">Calibration</span>
+          <span class="cal-close" onclick="abortCalibration()">&times;</span>
+        </div>
+        <div id="calBody" class="cal-body">
+          <div id="calInstruction" class="cal-instruction">Preparing calibration...</div>
+          <div id="calProgress" class="cal-progress">
+            <div id="calProgressBar" class="cal-progress-bar"></div>
+          </div>
+          <div id="calStatus" class="cal-status"></div>
+        </div>
+        <div class="cal-modal-footer">
+          <button id="calAbortBtn" class="action-btn danger" onclick="abortCalibration()">Abort</button>
+          <button id="calContinueBtn" class="action-btn success hidden" onclick="continueCalibration()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="notifContainer"></div>
 
     <div id="statusbar">
       <span id="statusMessage">Ready &mdash; connect to a vehicle to begin</span>
@@ -239,6 +303,7 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/static/js/toolbar.js?v=10"></script>
   <script src="/static/js/grid.js?v=10"></script>
   <script src="/static/js/app.js?v=10"></script>
 </body>

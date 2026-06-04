@@ -1,6 +1,9 @@
 const socket = io();
 let waypoints = [];
 let wpMarkers = [];
+let homePos = null;
+let homeMarker = null;
+let homeLine = null;
 let map = null;
 let vehicleMarker = null;
 let isConnected = false;
@@ -34,6 +37,7 @@ socket.on('state_update', (data) => {
     btn.className = '';
     document.getElementById('statusMessage').textContent = 'Not connected';
     waypoints = [];
+    homePos = null;
     renderWaypoints();
     updateMarkers();
     autoDownloaded = false;
@@ -43,6 +47,7 @@ socket.on('state_update', (data) => {
   }
   if (data.lat && data.lon && vehicleMarker) {
     vehicleMarker.setLatLng([data.lat, data.lon]);
+    homePos = { lat: data.lat, lon: data.lon };
     if (!mapInitialized) {
       map.setView([data.lat, data.lon], 16);
       mapInitialized = true;
@@ -76,7 +81,13 @@ socket.on('fence_data', (data) => {
 // --- Map ---
 function initMap(lat, lon) {
   map = L.map('map', { center: [lat, lon], zoom: 16, zoomControl: true, attributionControl: false });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+  var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+  var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+  var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
+  var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
+
+  osm.addTo(map);
 
   vehicleMarker = L.marker([lat, lon], {
     icon: L.divIcon({
@@ -87,6 +98,18 @@ function initMap(lat, lon) {
   }).addTo(map);
 
   fenceGroup = L.layerGroup().addTo(map);
+
+  var gridLayer = addGrid(map);
+
+  L.control.layers({
+    'Street': osm,
+    'Satellite': sat,
+    'Topo': topo,
+    'Dark': dark,
+  }, {
+    'Grid': gridLayer,
+    'Fence': fenceGroup,
+  }, { position: 'topright' }).addTo(map);
 
   map.on('click', (e) => {
     if (e.originalEvent.target.closest('.leaflet-control') || e.originalEvent.target.closest('.context-menu')) return;
@@ -100,6 +123,8 @@ function initMap(lat, lon) {
     menu.style.top = `${e.originalEvent.clientY}px`;
     menu.dataset.lat = e.latlng.lat.toFixed(7);
     menu.dataset.lon = e.latlng.lng.toFixed(7);
+    var ctxNum = document.getElementById('ctxInsertNum');
+    if (ctxNum) ctxNum.textContent = selectedWp >= 0 ? selectedWp + 1 : waypoints.length + 1;
     menu.classList.remove('hidden');
   });
 
@@ -109,7 +134,19 @@ function initMap(lat, lon) {
 document.addEventListener('click', () => {
   const menu = document.getElementById('mapContextMenu');
   if (menu) menu.classList.add('hidden');
+  closePlanDropdown();
 });
+
+function togglePlanDropdown(e) {
+  e.stopPropagation();
+  var dd = document.getElementById('planDropdown');
+  dd.classList.toggle('hidden');
+}
+
+function closePlanDropdown() {
+  var dd = document.getElementById('planDropdown');
+  if (dd) dd.classList.add('hidden');
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   initMap(37.7749, -122.4194);
@@ -141,12 +178,16 @@ function addWaypointFromMenu() {
 function addMarker(idx) {
   const wp = waypoints[idx];
   if (!wp) return;
+  var isSel = idx === selectedWp;
+  var bg = isSel ? '#0ea5e9' : '#7c3aed';
+  var border = isSel ? '#fff' : '#fff';
+  var shadow = isSel ? 'rgba(14,165,233,0.7)' : 'rgba(124,58,237,0.5)';
   const marker = L.marker([wp.x, wp.y], {
     draggable: true,
     icon: L.divIcon({
       className: 'wp-marker',
-      html: `<div style="width:20px;height:20px;background:#7c3aed;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;box-shadow:0 0 8px rgba(124,58,237,0.5);">${idx + 1}</div>`,
-      iconSize: [20, 20], iconAnchor: [10, 10],
+      html: `<div style="width:22px;height:22px;background:${bg};border:2px solid ${border};border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:10px;font-weight:700;box-shadow:0 0 8px ${shadow};">${idx + 1}</div>`,
+      iconSize: [22, 22], iconAnchor: [11, 11],
     }),
   }).addTo(map);
   marker.on('dragend', () => {
@@ -157,6 +198,7 @@ function addMarker(idx) {
   });
   marker.on('click', () => {
     selectedWp = idx;
+    updateMarkers();
     renderWaypoints();
   });
   wpMarkers.push(marker);
@@ -167,11 +209,25 @@ function updateMarkers() {
   wpMarkers.forEach(m => map.removeLayer(m));
   wpMarkers = [];
   if (wpLine) { map.removeLayer(wpLine); wpLine = null; }
+  if (homeLine) { map.removeLayer(homeLine); homeLine = null; }
+  if (homeMarker) { map.removeLayer(homeMarker); homeMarker = null; }
   waypoints.forEach((_, i) => addMarker(i));
   if (waypoints.length > 0) {
-    const pts = waypoints.map(wp => [wp.x, wp.y]);
+    var pts = waypoints.map(wp => [wp.x, wp.y]);
     wpLine = L.polyline(pts, {color: '#7c3aed', weight: 2, opacity: 0.5, dashArray: '6,4', interactive: false}).addTo(map);
-    const bounds = wpMarkers.map(m => m.getLatLng());
+    if (homePos) {
+      homeMarker = L.marker([homePos.lat, homePos.lon], {
+        icon: L.divIcon({
+          className: 'home-marker',
+          html: '<div style="width:24px;height:24px;background:#22c55e;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;font-weight:700;box-shadow:0 0 8px rgba(34,197,94,0.5);">H</div>',
+          iconSize: [24, 24], iconAnchor: [12, 12],
+        }), interactive: false,
+      }).addTo(map);
+      homeLine = L.polyline([[homePos.lat, homePos.lon], [pts[0][0], pts[0][1]]], {
+        color: '#22c55e', weight: 2, opacity: 0.4, dashArray: '4,4', interactive: false,
+      }).addTo(map);
+    }
+    var bounds = wpMarkers.map(m => m.getLatLng());
     map.fitBounds(bounds, { padding: [50, 50] });
   }
 }
@@ -183,25 +239,32 @@ function removeWaypoint(idx) {
   updateStatus();
 }
 
+var WP_ORDER = Object.entries(CMD_NAMES).sort(function(a,b){return a[0]-b[0]});
+
 function renderWaypoints() {
   const tbody = document.getElementById('wpList');
   tbody.innerHTML = '';
   waypoints.forEach((wp, i) => {
     const tr = document.createElement('tr');
     if (i === selectedWp) tr.className = 'active';
+    var cmdOpts = WP_ORDER.map(function(e) {
+      return '<option value="' + e[0] + '"' + (wp.command == e[0] ? ' selected' : '') + '>' + e[1] + '</option>';
+    }).join('');
+    var editing = selectedWp === i;
+    var latStr = wp.x.toFixed(6);
+    var lonStr = wp.y.toFixed(6);
+    var altStr = wp.z.toFixed(1);
     tr.innerHTML = `
       <td class="wp-num">${i + 1}</td>
       <td>
-        <select onchange="updateWp(${i},'command',parseInt(this.value))">
-          ${Object.entries(CMD_NAMES).map(([k, v]) =>
-            `<option value="${k}" ${wp.command == k ? 'selected' : ''}>${v}</option>`
-          ).join('')}
-        </select>
+        <select onchange="updateWp(${i},'command',parseInt(this.value))">${cmdOpts}</select>
       </td>
-      <td><input type="text" value="${wp.x.toFixed(7)}" onchange="updateWp(${i},'x',parseFloat(this.value)||0)"></td>
-      <td><input type="text" value="${wp.y.toFixed(7)}" onchange="updateWp(${i},'y',parseFloat(this.value)||0)"></td>
-      <td><input type="text" value="${wp.z.toFixed(1)}" onchange="updateWp(${i},'z',parseFloat(this.value)||0)" style="width:50px"></td>
-      <td class="delete-wp" onclick="removeWaypoint(${i})">&#x2716;</td>
+      <td>${editing ? '<input type="text" value="' + latStr + '" onchange="updateWp(' + i + ',\'x\',parseFloat(this.value)||0)" class="wp-edit">' : '<span class="wp-cell" ondblclick="editWp(' + i + ')">' + latStr + '</span>'}</td>
+      <td>${editing ? '<input type="text" value="' + lonStr + '" onchange="updateWp(' + i + ',\'y\',parseFloat(this.value)||0)" class="wp-edit">' : '<span class="wp-cell" ondblclick="editWp(' + i + ')">' + lonStr + '</span>'}</td>
+      <td>${editing ? '<input type="text" value="' + altStr + '" onchange="updateWp(' + i + ',\'z\',parseFloat(this.value)||0)" class="wp-edit" style="width:50px">' : '<span class="wp-cell" ondblclick="editWp(' + i + ')">' + altStr + '</span>'}</td>
+      <td style="text-align:center">
+        <span class="delete-wp" onclick="removeWaypoint(${i})">&#x2716;</span>
+      </td>
     `;
     tbody.appendChild(tr);
   });
@@ -236,6 +299,21 @@ function dist(lat1, lon1, lat2, lon2) {
   const dLon = (lon2 - lon1) * Math.PI / 180;
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function editWp(idx) {
+  selectedWp = idx;
+  renderWaypoints();
+}
+
+function reverseMission() {
+  if (waypoints.length < 2) { alert('Need at least 2 waypoints to reverse.'); return; }
+  waypoints.reverse();
+  selectedWp = -1;
+  updateMarkers();
+  renderWaypoints();
+  updateStatus();
+  document.getElementById('planStatus').textContent = 'Mission reversed.';
 }
 
 function drawFenceOverlay() {
@@ -276,63 +354,12 @@ function setAllAltitudes() {
 
 // --- Actions ---
 function toggleConnection() {
-  if (isConnected) {
+  var btn = document.getElementById('connectBtn');
+  if (btn && btn.classList.contains('connected')) {
     socket.emit('disconnect_vehicle');
   } else {
     showConnectDialog();
   }
-}
-
-function showConnectDialog() {
-  const overlay = document.createElement('div');
-  overlay.className = 'dialog-overlay';
-  overlay.innerHTML = `
-    <div class="dialog-box" style="width:420px">
-      <h3>Connect to Vehicle</h3>
-      <div class="dialog-row">
-        <label>Type:</label>
-        <select id="connType" style="flex:1">
-          <option value="udp">UDP (SITL)</option>
-          <option value="serial">Serial</option>
-          <option value="tcp_client">TCP Client</option>
-        </select>
-      </div>
-      <div id="connSerialRow" class="dialog-row" style="display:none">
-        <label>Port:</label>
-        <input id="connPort" type="text" placeholder="/dev/ttyACM0" style="flex:1">
-      </div>
-      <div class="dialog-row">
-        <label>Port/Port #:</label>
-        <input id="connPortNum" type="text" placeholder="14550" style="flex:1">
-      </div>
-      <div class="dialog-row">
-        <label>Baud:</label>
-        <select id="connBaud" style="flex:1">
-          <option value="57600">57600</option><option value="115200">115200</option>
-          <option value="921600">921600</option>
-        </select>
-      </div>
-      <div class="dialog-actions">
-        <button class="action-btn" onclick="doConnect()">Connect</button>
-        <button class="action-btn danger" onclick="this.closest('.dialog-overlay').remove()">Cancel</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  overlay.querySelector('#connType').onchange = function() {
-    overlay.querySelector('#connSerialRow').style.display = this.value === 'serial' ? 'flex' : 'none';
-  };
-}
-
-function doConnect() {
-  const overlay = document.querySelector('.dialog-overlay');
-  if (!overlay) return;
-  const connType = overlay.querySelector('#connType').value;
-  const port = overlay.querySelector('#connPort')?.value || '';
-  const baud = parseInt(overlay.querySelector('#connBaud').value) || 57600;
-  const portNum = parseInt(overlay.querySelector('#connPortNum').value) || 14550;
-  overlay.remove();
-  socket.emit('connect_vehicle', { type: connType, port, baud, host: '', port_num: portNum });
 }
 
 function disconnectVehicle() {

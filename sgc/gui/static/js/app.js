@@ -6,6 +6,7 @@ let vehicle = {
   hdop: 99.99,
 };
 let vehicleMarker = null;
+let _homePos = null;
 let vehicleCircle = null;
 let trail = [];
 let trailGroup = null;
@@ -25,6 +26,9 @@ socket.on('state_update', (data) => {
   updateActions(data);
   updateStatusBar(data);
   feedCharts(data);
+  updateSensorHealth(data);
+  updateFlightStats(data);
+  checkNotifications(data);
   const btn = document.getElementById('connectBtn');
   if (data.connected) {
     btn.textContent = 'DISCONNECT';
@@ -47,6 +51,7 @@ socket.on('state_update', (data) => {
     window._reqFence = false;
     window._lastMissionData = null;
     window._lastFenceData = null;
+    _homePos = null;
     if (missionWpGroup) { missionWpGroup.clearLayers(); }
     if (fenceGroup) { fenceGroup.clearLayers(); }
   }
@@ -64,6 +69,9 @@ socket.on('log', (data) => {
       clearTimeout(banner._timer);
       banner._timer = setTimeout(function() { banner.classList.add('hidden'); }, 15000);
     }
+  }
+  if (_calActive && !msg.includes('got command_ack') && (msg.includes('place') || msg.includes('rotate') || msg.includes('calibration') || msg.includes('progress') || msg.includes('orient') || msg.includes('finished') || msg.includes('complete') || msg.includes('continue') || msg.includes('success') || msg.includes('failed') || msg.includes('rejected'))) {
+    updateCalibration(data.message);
   }
 });
 
@@ -100,143 +108,13 @@ function toggleTlog() {
 
 function log(message, level = 'info') {
   const el = document.getElementById('consoleOutput');
+  if (!el) return;
   const div = document.createElement('div');
   div.className = `log-${level}`;
   var t = new Date();
   div.textContent = '[' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0') + '] ' + message;
   el.appendChild(div);
   el.scrollTop = el.scrollHeight;
-}
-
-function toggleConnection() {
-  if (vehicle.connected) {
-    disconnectVehicle();
-  } else {
-    showConnectDialog();
-  }
-}
-
-function disconnectVehicle() {
-  socket.emit('disconnect_vehicle');
-  const btn = document.getElementById('connectBtn');
-  btn.textContent = 'CONNECT';
-  btn.className = '';
-  btn.disabled = false;
-}
-
-function connectVehicle(type, port, baud, host, portNum) {
-  log(`Connecting: ${type}${port ? ' ' + port : ''} @ ${baud} baud...`, 'info');
-  const btn = document.getElementById('connectBtn');
-  btn.textContent = 'CONNECTING...';
-  btn.disabled = true;
-  socket.emit('connect_vehicle', {
-    type, port, baud: parseInt(baud),
-    host: host || '', port_num: parseInt(portNum) || 0,
-  });
-}
-
-function showConnectDialog() {
-  const overlay = document.createElement('div');
-  overlay.className = 'dialog-overlay';
-  overlay.innerHTML = `
-    <div class="dialog-box" style="width:420px">
-      <h3>Connect to Vehicle</h3>
-      <div class="dialog-row">
-        <label>Type:</label>
-        <select id="connType" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-          <option value="sitl">SITL (UDP 127.0.0.1:14550)</option>
-          <option value="serial">Serial Port</option>
-          <option value="tcp_client">TCP Client</option>
-          <option value="tcp_server">TCP Server</option>
-          <option value="udp">UDP (listen)</option>
-        </select>
-      </div>
-
-      <div id="connSerial" style="display:none">
-        <div class="dialog-row">
-          <label>Port:</label>
-          <select id="dialPort" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;"></select>
-        </div>
-        <div class="dialog-row">
-          <label>Baud:</label>
-          <select id="dialBaud" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;">
-            <option>9600</option><option>19200</option><option>38400</option>
-            <option selected>57600</option><option>115200</option><option>921600</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="connNet" style="display:none">
-        <div class="dialog-row">
-          <label>Host:</label>
-          <input type="text" id="dialHost" value="127.0.0.1" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;" />
-        </div>
-        <div class="dialog-row">
-          <label>Port:</label>
-          <input type="text" id="dialPortNum" value="5760" style="flex:1;background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px 12px;font-size:13px;outline:none;" />
-        </div>
-      </div>
-
-      <div class="dialog-btns">
-        <button class="secondary" onclick="this.closest('.dialog-overlay').remove()">Cancel</button>
-        <button class="primary" onclick="doConnect()">Connect</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  const typeSel = overlay.querySelector('#connType');
-  const serialDiv = overlay.querySelector('#connSerial');
-  const netDiv = overlay.querySelector('#connNet');
-
-  const updateFields = () => {
-    const v = typeSel.value;
-    serialDiv.style.display = v === 'serial' ? '' : 'none';
-    netDiv.style.display = (v === 'tcp_client' || v === 'tcp_server' || v === 'udp') ? '' : 'none';
-  };
-  typeSel.addEventListener('change', updateFields);
-
-  // Populate serial ports when type is auto/serial
-  const loadSer = async () => {
-    const sel = overlay.querySelector('#dialPort');
-    sel.innerHTML = '<option value="">Scanning...</option>';
-    try {
-      const r = await fetch('/api/ports');
-      const ports = await r.json();
-      sel.innerHTML = '';
-      if (ports.length === 0) {
-        sel.innerHTML = '<option value="">No ports found</option>';
-      }
-      ports.forEach(p => {
-        const o = document.createElement('option');
-        o.value = p.device;
-        o.textContent = `${p.device}  (${p.description})`;
-        sel.appendChild(o);
-      });
-    } catch {
-      sel.innerHTML = '<option value="">Error loading ports</option>';
-    }
-  };
-  loadSer();
-  updateFields();
-}
-
-function doConnect() {
-  const type = document.querySelector('#connType').value;
-  const port = document.querySelector('#dialPort')?.value || '';
-  const baud = document.querySelector('#dialBaud')?.value || '57600';
-  const host = document.querySelector('#dialHost')?.value || '';
-  const portNum = document.querySelector('#dialPortNum')?.value || '0';
-
-  if (type === 'sitl') {
-    connectVehicle('udp', '', '57600', '127.0.0.1', '14550');
-  } else if (type === 'serial') {
-    if (!port) { log('Select a serial port', 'warning'); return; }
-    connectVehicle('serial', port, baud, '', '');
-  } else {
-    connectVehicle(type, '', baud, host, portNum);
-  }
-  document.querySelector('.dialog-overlay').remove();
 }
 
 function setMode() {
@@ -266,36 +144,71 @@ function armTakeoff() {
   const alt = prompt('Takeoff altitude (m):', '10');
   if (alt === null) return;
   socket.emit('set_mode', { mode: 'GUIDED' });
-  setTimeout(() => {
-    socket.emit('arm');
-  }, 500);
-  setTimeout(() => {
-    command('TAKEOFF', { altitude: parseFloat(alt) || 10 });
-  }, 2000);
+  setTimeout(() => { socket.emit('arm'); }, 500);
+  setTimeout(() => { command('TAKEOFF', { altitude: parseFloat(alt) || 10 }); }, 2000);
 }
 
-// Legacy stubs for menu references
-function showConnectionDialog() { showConnectDialog(); }
-function connectFromDialog() { doConnect(); }
+// --- Calibration ---
+var _calActive = false;
+var _calType = '';
 
-function menuAction(action) {
-  if (action === 'Exit') { window.close(); return; }
-  if (action === 'About') {
-    alert('SGC v0.1.0\nSkywin Ground Control Station\n\nA professional MAVLink GCS\nbuilt with Python, Flask & pymavlink.\n\nCompatible with ArduPilot and PX4.');
-    return;
-  }
-  if (['Serial Port', 'TCP Client', 'TCP Server', 'UDP'].includes(action)) {
-    showConnectDialog();
-    return;
-  }
-  log(`Menu: ${action}`, 'info');
+var CAL_PROGRESS = {
+  gyro: { steps: 1, label: 'Gyroscope' },
+  accel: { steps: 6, label: 'Accelerometer' },
+  mag: { steps: 1, label: 'Compass' },
+  level: { steps: 1, label: 'Level Horizon' },
+  radio: { steps: 1, label: 'Radio' },
+  pressure: { steps: 1, label: 'Pressure' },
+};
+
+function startCalibration(type) {
+  _calActive = true;
+  _calType = type;
+
+  var label = CAL_PROGRESS[type] ? CAL_PROGRESS[type].label : type;
+  document.getElementById('calTitle').textContent = label + ' Calibration';
+  document.getElementById('calInstruction').textContent = 'Starting ' + label.toLowerCase() + ' calibration...';
+  document.getElementById('calStatus').textContent = '';
+  document.getElementById('calProgressBar').style.width = '0%';
+  document.getElementById('calContinueBtn').classList.add('hidden');
+  document.getElementById('calModal').classList.remove('hidden');
+
+  socket.emit('calibrate', { type: type });
 }
 
-function toggleConsoleSize() {
-  var rc = document.getElementById('rightConsole');
-  var btn = document.getElementById('consoleExpandBtn');
-  rc.classList.toggle('expanded');
-  btn.innerHTML = rc.classList.contains('expanded') ? '&#9660;' : '&#9650;';
+function continueCalibration() {
+  if (!_calActive) return;
+  document.getElementById('calInstruction').textContent = 'Waiting for next step...';
+  document.getElementById('calStatus').textContent = 'Position confirmed, communicating with FCU...';
+  document.getElementById('calContinueBtn').classList.add('hidden');
+  socket.emit('calibrate', { type: _calType });
+}
+
+function abortCalibration() {
+  _calActive = false;
+  _calType = '';
+  document.getElementById('calModal').classList.add('hidden');
+}
+
+function updateCalibration(msg) {
+  if (!_calActive) return;
+  document.getElementById('calInstruction').textContent = msg;
+  document.getElementById('calStatus').textContent = msg;
+
+  var lower = msg.toLowerCase();
+  var finished = lower.includes('finished') || lower.includes('complete') || lower.includes('success') || lower.includes('passed');
+
+  var needsContinue = _calType === 'accel' && !finished && (lower.includes('place') || lower.includes('orient') || lower.includes('position') || lower.includes('level'));
+  document.getElementById('calContinueBtn').classList.toggle('hidden', !needsContinue);
+
+  if (finished || lower.includes('failed') || lower.includes('rejected')) {
+    document.getElementById('calProgressBar').style.width = '100%';
+    setTimeout(function() {
+      _calActive = false;
+      _calType = '';
+      document.getElementById('calModal').classList.add('hidden');
+    }, 2500);
+  }
 }
 
 function updateTelemetry(data) {
@@ -394,6 +307,7 @@ function updateMap(data) {
   if (data.lat && data.lon && vehicleMarker) {
     const latlng = [data.lat, data.lon];
     vehicleMarker.setLatLng(latlng);
+    _homePos = { lat: data.lat, lon: data.lon };
     const heading = data.heading || 0;
     const arrow = vehicleMarker.getElement()?.querySelector('.vehicle-arrow');
     if (arrow) {
@@ -456,8 +370,21 @@ function drawMissionWaypoints(wps) {
       interactive: false,
     }).addTo(missionWpGroup);
   }
-  if (pts.length > 1) {
+  if (pts.length >= 1) {
     L.polyline(pts, {color: '#0ea5e9', weight: 2, opacity: 0.5, dashArray: '6,4', interactive: false}).addTo(missionWpGroup);
+  }
+  if (_homePos && pts.length > 0) {
+    L.marker([_homePos.lat, _homePos.lon], {
+      icon: L.divIcon({
+        className: 'home-marker',
+        html: '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;background:#22c55e;color:#fff;border:2px solid #fff;border-radius:50%;font-size:12px;font-weight:bold;box-shadow:0 0 8px rgba(34,197,94,0.5);">H</span>',
+        iconSize: [24, 24], iconAnchor: [12, 12],
+      }),
+      interactive: false,
+    }).addTo(missionWpGroup);
+    L.polyline([[_homePos.lat, _homePos.lon], pts[0]], {
+      color: '#22c55e', weight: 2, opacity: 0.4, dashArray: '4,4', interactive: false,
+    }).addTo(missionWpGroup);
   }
 }
 
@@ -481,14 +408,30 @@ function initMap(lat, lon) {
     window.map = L.map('map', {
       center: [lat, lon], zoom: 16, zoomControl: true, attributionControl: false,
     });
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-    }).addTo(window.map);
 
-    addGrid(window.map);
+    var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+    var sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' });
+    var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
+    var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
+
+    osm.addTo(window.map);
+
+    var gridLayer = addGrid(window.map);
     trailGroup = L.featureGroup().addTo(window.map);
     missionWpGroup = L.featureGroup().addTo(window.map);
     fenceGroup = L.featureGroup().addTo(window.map);
+
+    L.control.layers({
+      'Street': osm,
+      'Satellite': sat,
+      'Topo': topo,
+      'Dark': dark,
+    }, {
+      'Grid': gridLayer,
+      'Trail': trailGroup,
+      'Mission WPs': missionWpGroup,
+      'Fence': fenceGroup,
+    }, { position: 'topright' }).addTo(window.map);
     if (window._lastMissionData) drawMissionWaypoints(window._lastMissionData.waypoints || []);
     if (window._lastFenceData) drawFencePoints(window._lastFenceData.points || []);
 
@@ -639,10 +582,8 @@ document.addEventListener('keydown', function(e) {
 window.startMeasuring = startMeasuring;
 
 function updateActions(data) {
-  setText('i_sysid', data.sysid ?? '---');
-  setText('i_compid', data.compid ?? '---');
-  setText('i_type', data.vehicle_type ?? '---');
-  setText('i_firmware', data.firmware ?? '---');
+  setText('tt_type', data.vehicle_type ?? '---');
+  setText('tt_firmware', data.firmware ? data.firmware.substring(0,12) : '---');
 
   if (data.connected) {
     const btn = document.getElementById('connectBtn');
@@ -701,6 +642,164 @@ function updateStatusBar(data) {
 
   document.getElementById('sysidInd').textContent =
     data.connected ? `SysID: ${data.sysid ?? '?'} | CompID: ${data.compid ?? '?'}` : 'SysID: --';
+}
+
+function updateSensorHealth(data) {
+  var health = data.sensor_health || 0;
+  var sensors = {
+    gyro: 1, accel: 2, mag: 4, baro: 8,
+    gps: 32, rc: 65536, ahrs: 2097152, battery: 33554432,
+  };
+  for (var name in sensors) {
+    var dotId = name === 'gps' ? 's_gps_sens' : name === 'battery' ? 's_batt_sens' : 's_' + name;
+    var dot = document.getElementById(dotId);
+    if (!dot) continue;
+    if (name === 'battery') {
+      var rem = data.battery_remaining;
+      dot.className = rem === undefined || rem === null ? 'sensor-dot na' : rem > 20 ? 'sensor-dot healthy' : rem > 10 ? 'sensor-dot warn' : 'sensor-dot unhealthy';
+    } else {
+      dot.className = (health & sensors[name]) ? 'sensor-dot healthy' : 'sensor-dot na';
+    }
+  }
+  var fixType = data.fix_type || 0;
+  var gps = document.getElementById('s_gps_sens');
+  if (gps) gps.className = fixType >= 3 ? 'sensor-dot healthy' : fixType >= 2 ? 'sensor-dot warn' : 'sensor-dot unhealthy';
+
+  var ekf = [
+    { id: 'ekf_hpos', key: 'ekf_pos_horiz_variance' },
+    { id: 'ekf_vpos', key: 'ekf_pos_vert_variance' },
+    { id: 'ekf_vel', key: 'ekf_vel_variance' },
+    { id: 'ekf_mag', key: 'ekf_compass_variance' },
+  ];
+  for (var i = 0; i < ekf.length; i++) {
+    var el = document.getElementById(ekf[i].id);
+    if (!el) continue;
+    var val = data[ekf[i].key];
+    if (val === undefined || val === null) { el.textContent = '---'; el.className = 'ekf-val'; }
+    else { el.textContent = val.toFixed(3); el.className = 'ekf-val' + (val < 1.0 ? ' good' : val < 3.0 ? ' warn' : ' bad'); }
+  }
+  var fl = document.getElementById('ekf_flags');
+  if (fl) {
+    var f = data.ekf_flags;
+    if (f === undefined || f === null) { fl.textContent = '---'; }
+    else {
+      var a = [];
+      if (f & 1) a.push('ATT'); if (f & 2) a.push('HVEL'); if (f & 4) a.push('VVEL');
+      if (f & 8) a.push('HPOS'); if (f & 16) a.push('APOS'); if (f & 32) a.push('VPOS');
+      if (f & 64) a.push('AGL'); if (f & 128) a.push('CONST'); if (f & 1024) a.push('UNINIT');
+      fl.textContent = a.length ? a.join(' ') : 'NONE';
+    }
+  }
+  var cpu = document.getElementById('tt_cpu_load');
+  if (cpu) {
+    var ld = data.cpu_load;
+    cpu.textContent = 'CPU: ' + (ld !== undefined ? ld.toFixed(1) + '%' : '---');
+  }
+}
+
+var _fsHomeSet = false, _fsHomeLat = 0, _fsHomeLon = 0;
+var _fsMaxAlt = 0, _fsMaxGS = 0, _fsMaxDist = 0;
+var _fsArmed = false, _fsTimerStart = null;
+
+function updateFlightStats(data) {
+  if (!data.connected) {
+    _fsHomeSet = false; _fsMaxAlt = 0; _fsMaxGS = 0; _fsMaxDist = 0; _fsArmed = false; _fsTimerStart = null;
+    window.clearInterval(_fsTimerInterval);
+    setText('fs_max_alt', '---'); setText('fs_max_gs', '---');
+    setText('fs_max_dist', '---'); setText('fs_flight_time', '00:00');
+    return;
+  }
+  if (!_fsHomeSet && data.lat && data.lon) {
+    _fsHomeLat = data.lat; _fsHomeLon = data.lon; _fsHomeSet = true;
+  }
+  if (data.alt !== undefined && data.alt > _fsMaxAlt) _fsMaxAlt = data.alt;
+  if (data.ground_speed !== undefined && data.ground_speed > _fsMaxGS) _fsMaxGS = data.ground_speed;
+  if (_fsHomeSet && data.lat && data.lon) {
+    var d = haversine(_fsHomeLat, _fsHomeLon, data.lat, data.lon);
+    if (d > _fsMaxDist) _fsMaxDist = d;
+  }
+  if (data.armed && !_fsArmed) {
+    _fsArmed = true;
+    _fsTimerStart = Date.now();
+    _fsTimerInterval = window.setInterval(updateFlightTimer, 1000);
+  } else if (!data.armed && _fsArmed) {
+    _fsArmed = false;
+    _fsTimerStart = null;
+    window.clearInterval(_fsTimerInterval);
+  }
+  setText('fs_max_alt', _fsMaxAlt.toFixed(1) + 'm');
+  setText('fs_max_gs', _fsMaxGS.toFixed(1) + 'm/s');
+  setText('fs_max_dist', _fsMaxDist.toFixed(0) + 'm');
+}
+
+function updateFlightTimer() {
+  if (!_fsTimerStart) return;
+  var sec = Math.floor((Date.now() - _fsTimerStart) / 1000);
+  var m = Math.floor(sec / 60);
+  var s = sec % 60;
+  var el = document.getElementById('fs_flight_time');
+  if (el) el.textContent = (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+var _nPrevMode = '', _nPrevArmed = false, _nPrevBatt = 100, _nPrevConnected = false;
+var _nLowBatt20 = false, _nLowBatt10 = false;
+
+function notify(msg, level) {
+  level = level || 'info';
+  var container = document.getElementById('notifContainer');
+  if (!container) return;
+  var el = document.createElement('div');
+  el.className = 'notif';
+  el.innerHTML = '<span class="notif-dot ' + level + '"></span><span class="notif-msg">' + msg + '</span>';
+  el.onclick = function() { el.remove(); };
+  container.appendChild(el);
+  setTimeout(function() { if (el.parentNode) { el.style.transition = 'opacity 0.3s'; el.style.opacity = '0'; setTimeout(function() { el.remove(); }, 300); } }, 5000);
+}
+
+function checkNotifications(data) {
+  if (!data.connected) {
+    _nPrevMode = ''; _nPrevArmed = false; _nPrevBatt = 100; _nLowBatt20 = false; _nLowBatt10 = false;
+    if (_nPrevConnected) { notify('Disconnected from vehicle', 'warning'); }
+    _nPrevConnected = false;
+    return;
+  }
+  if (!_nPrevConnected && data.connected) {
+    notify('Connected to vehicle', 'success');
+  }
+  _nPrevConnected = true;
+
+  if (data.mode && data.mode !== _nPrevMode) {
+    notify('Mode: ' + data.mode, 'info');
+    _nPrevMode = data.mode;
+  }
+  if (data.armed !== undefined && data.armed !== _nPrevArmed) {
+    notify(data.armed ? 'Vehicle ARMED' : 'Vehicle DISARMED', data.armed ? 'warning' : 'info');
+    _nPrevArmed = data.armed;
+  }
+  var batt = data.battery_remaining;
+  if (batt !== undefined && batt !== null && batt >= 0) {
+    if (batt < 10 && !_nLowBatt10) {
+      notify('CRITICAL: Battery ' + batt + '%', 'danger');
+      _nLowBatt10 = true;
+      _nLowBatt20 = true;
+    } else if (batt < 20 && !_nLowBatt20) {
+      notify('Low battery: ' + batt + '%', 'warning');
+      _nLowBatt20 = true;
+    }
+    if (batt >= 25) { _nLowBatt20 = false; _nLowBatt10 = false; }
+    _nPrevBatt = batt;
+  }
+}
+
+function switchActionTab(tab) {
+  var tabs = document.querySelectorAll('.action-tab');
+  tabs.forEach(function(t) { t.classList.remove('active'); });
+  var activeTab = document.querySelector('.action-tab[data-tab="' + tab + '"]');
+  if (activeTab) activeTab.classList.add('active');
+  document.getElementById('controlPanel').classList.add('hidden');
+  document.getElementById('healthPanel').classList.add('hidden');
+  document.getElementById('statsPanel').classList.add('hidden');
+  document.getElementById(tab + 'Panel').classList.remove('hidden');
 }
 
 function setText(id, val) {
@@ -902,7 +1001,7 @@ function escapeHtml(s) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  initMap(37.7749, -122.4194);
+  if (document.getElementById('map')) initMap(37.7749, -122.4194);
   initCharts();
 });
 
