@@ -27,15 +27,7 @@ const CMD_NAMES = {
 socket.on('connect', () => {});
 socket.on('state_update', (data) => {
   isConnected = data.connected;
-  const btn = document.getElementById('connectBtn');
-  if (data.connected) {
-    btn.textContent = 'DISCONNECT';
-    btn.className = 'connected';
-    document.getElementById('statusMessage').textContent = 'Connected';
-  } else {
-    btn.textContent = 'CONNECT';
-    btn.className = '';
-    document.getElementById('statusMessage').textContent = 'Not connected';
+  if (!data.connected) {
     waypoints = [];
     homePos = null;
     renderWaypoints();
@@ -353,18 +345,6 @@ function setAllAltitudes() {
 }
 
 // --- Actions ---
-function toggleConnection() {
-  var btn = document.getElementById('connectBtn');
-  if (btn && btn.classList.contains('connected')) {
-    socket.emit('disconnect_vehicle');
-  } else {
-    showConnectDialog();
-  }
-}
-
-function disconnectVehicle() {
-  socket.emit('disconnect_vehicle');
-}
 
 // --- Mission Commands ---
 function uploadMission() {

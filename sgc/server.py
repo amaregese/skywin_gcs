@@ -5,11 +5,6 @@ import time
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_socketio import SocketIO, emit
 
-try:
-    import serial.tools.list_ports
-except ImportError:
-    serial = None
-
 from sgc.communication.connection_manager import MAVLinkConnection
 from sgc.gui.param_defs import get_metadata
 
@@ -23,6 +18,7 @@ _pending_reboot_conn = None  # (conn_str, baud) saved before reboot
 _last_mission = None  # last downloaded mission data
 _last_fence = None  # last downloaded fence data
 _log_buffer = []  # last 200 log messages
+_startup_done = False
 
 
 def _broadcast(event, data):
@@ -31,21 +27,6 @@ def _broadcast(event, data):
         if len(_log_buffer) > 200:
             _log_buffer[:] = _log_buffer[-200:]
     socketio.emit(event, data)
-
-
-def _build_connection_string(conn_type, port, host, port_num):
-    if conn_type in ("tcp_client",):
-        host = host or "127.0.0.1"
-        port_num = port_num or 5760
-        return f"tcp:{host}:{port_num}"
-    elif conn_type in ("tcp_server",):
-        port_num = port_num or 5760
-        return f"tcpin:0.0.0.0:{port_num}"
-    elif conn_type in ("udp",):
-        port_num = port_num or 14550
-        return f"udpin:0.0.0.0:{port_num}"
-    else:
-        return port or "/dev/ttyACM0"
 
 
 @app.route("/logo.png")
@@ -81,36 +62,6 @@ def fence_page():
 @app.route("/config")
 def config_page():
     return render_template("config.html")
-
-
-@app.route("/api/ports")
-def list_ports():
-    ports = []
-    if serial:
-        for p in serial.tools.list_ports.comports():
-            ports.append({"device": p.device, "description": p.description})
-    return jsonify(ports)
-
-
-@app.route("/api/auto_scan")
-def auto_scan():
-    timeout = request.args.get("timeout", 0.5, type=float)
-
-    baud_list = request.args.getlist("baud", type=int)
-    if not baud_list:
-        baud_list = [57600, 115200, 921600, 38400]
-
-    all_results = {}
-    for baud in baud_list:
-        if len(all_results) >= 5:
-            break
-        results = MAVLinkConnection.detect_ports(baud=baud, timeout=timeout)
-        for r in results:
-            dev = r["device"]
-            if dev not in all_results:
-                r["baud"] = baud
-                all_results[dev] = r
-    return jsonify({"found": list(all_results.values())})
 
 
 @app.route("/api/params/snapshot")
@@ -215,56 +166,41 @@ def get_state():
     return {"connected": False}
 
 
+@socketio.on("connect_request")
+def handle_connect_request(data=None):
+    global _connection, _startup_done
+    if _startup_done:
+        emit("log", {"message": "Already attempted connection", "level": "warning"})
+        return
+    _startup_done = True
+
+    conn_str = data.get("connection", "udpin:0.0.0.0:14550") if data else "udpin:0.0.0.0:14550"
+    baud = int(data.get("baud", 57600)) if data else 57600
+
+    emit("log", {"message": f"Connecting to {conn_str} @ {baud} baud...", "level": "info"})
+
+    threading.Thread(target=_do_connect, args=(conn_str, baud), daemon=True).start()
+
+def _do_connect(conn_str, baud):
+    global _connection, _startup_done
+    try:
+        conn = MAVLinkConnection(conn_str, baud=baud)
+        conn.add_listener(_on_mavlink_event)
+        if conn.connect():
+            with _connection_lock:
+                _connection = conn
+            _broadcast("log", {"message": "Connected to vehicle", "level": "success"})
+            return
+    except Exception as e:
+        _broadcast("log", {"message": f"Connection failed: {e}", "level": "error"})
+    _broadcast("log", {"message": "Connection failed — no vehicle detected", "level": "warning"})
+    _startup_done = False
+
 @socketio.on("connect")
 def on_connect():
     if _connection and _connection.running:
         emit("state_update", _connection.state)
 
-
-@socketio.on("connect_vehicle")
-def handle_connect(data):
-    global _connection, _pending_reboot_conn
-
-    _pending_reboot_conn = None  # cancel any pending auto-reconnect
-
-    with _connection_lock:
-        if _connection and _connection.running:
-            emit("log", {"message": "Already connected. Disconnect first.", "level": "warning"})
-            return
-
-        conn_type = data.get("type", "serial")
-        port = data.get("port", "/dev/ttyACM0")
-        baud = int(data.get("baud", 57600))
-        host = data.get("host", "")
-        port_num = data.get("port_num", 0)
-
-        conn_str = _build_connection_string(conn_type, port, host, port_num)
-
-        def _connect_and_stream():
-            global _connection
-            conn = MAVLinkConnection(conn_str, baud=baud)
-            conn.add_listener(_on_mavlink_event)
-
-            with _connection_lock:
-                _connection = conn
-
-            if not conn.connect():
-                with _connection_lock:
-                    _connection = None
-
-        thread = threading.Thread(target=_connect_and_stream, daemon=True)
-        thread.start()
-
-
-@socketio.on("disconnect_vehicle")
-def handle_disconnect():
-    global _connection, _pending_reboot_conn
-    _pending_reboot_conn = None  # cancel any pending auto-reconnect
-    with _connection_lock:
-        if _connection:
-            _connection.stop_tlog()
-            _connection.disconnect()
-            _connection = None
 
 @socketio.on("start_tlog")
 def handle_start_tlog(data=None):
@@ -611,4 +547,6 @@ def _auto_reconnect():
         if (attempt + 1) % 5 == 0:
             _broadcast("log", {"message": f"Waiting for FCU... ({attempt + 1}/30)", "level": "mavlink"})
 
-    _broadcast("log", {"message": "Auto-reconnect timed out — connect manually", "level": "error"})
+    _broadcast("log", {"message": "Auto-reconnect timed out — no vehicle detected", "level": "error"})
+
+

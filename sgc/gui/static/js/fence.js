@@ -14,11 +14,7 @@ let mapInitialized = false;
 
 socket.on('state_update', (data) => {
   isConnected = data.connected;
-  const btn = document.getElementById('connectBtn');
   if (data.connected) {
-    btn.textContent = 'DISCONNECT';
-    btn.className = 'connected';
-    document.getElementById('statusMessage').textContent = 'Connected';
     if (!window._reqFence) {
       window._reqFence = true;
       socket.emit('request_fence');
@@ -28,9 +24,6 @@ socket.on('state_update', (data) => {
       socket.emit('request_mission');
     }
   } else {
-    btn.textContent = 'CONNECT';
-    btn.className = '';
-    document.getElementById('statusMessage').textContent = 'Not connected';
     window._reqFence = false;
     window._reqMissionFence = false;
     fencePoints = [];
@@ -318,19 +311,7 @@ document.getElementById('fenceFileInput').onchange = function(e) {
   e.target.value = '';
 };
 
-// --- Connection Helpers ---
-function toggleConnection() {
-  var btn = document.getElementById('connectBtn');
-  if (btn && btn.classList.contains('connected')) {
-    socket.emit('disconnect_vehicle');
-  } else {
-    showConnectDialog();
-  }
-}
 
-function disconnectVehicle() {
-  socket.emit('disconnect_vehicle');
-}
 
 function toggleTlog() {
   var btn = document.getElementById('tlogBtn');

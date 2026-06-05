@@ -404,6 +404,7 @@ class MAVLinkConnection:
             self.state["lat"] = getattr(msg, 'lat', 0) / 1e7
             self.state["lon"] = getattr(msg, 'lon', 0) / 1e7
             self.state["relative_alt"] = getattr(msg, 'relative_alt', 0) / 1000.0
+            self.state["msl_alt"] = getattr(msg, 'alt', 0) / 1000.0
             hdg = getattr(msg, 'hdg', 0)
             if hdg != 0:
                 self.state["heading"] = hdg / 100.0

@@ -22,16 +22,7 @@
           <div onclick="menuAction('Exit')">Exit</div>
         </div>
       </div>
-      <div class="menu-item"><span>Connect</span>
-        <div class="menu-dropdown">
-          <div onclick="menuAction('Serial Port')">Serial Port...</div>
-          <div onclick="menuAction('TCP Client')">TCP Client...</div>
-          <div onclick="menuAction('TCP Server')">TCP Server...</div>
-          <div onclick="menuAction('UDP')">UDP...</div>
-          <hr/>
-          <div onclick="disconnectVehicle()">Disconnect</div>
-        </div>
-      </div>
+
       <div class="menu-item"><span>Flight Plan</span>
         <div class="menu-dropdown">
           <div onclick="location.href='/plan'">Mission Planner</div>
@@ -73,103 +64,354 @@
     </div>
 
     <div id="toolbar">
-      <button id="connectBtn" onclick="toggleConnection()">CONNECT</button>
-      <div class="toolbar-sep"></div>
-      <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
-      <span id="sysidInd" class="indicator">SysID: --</span>
-      <span class="toolbar-sep"></span>
-      <span id="tt_type" class="indicator off">Type: ---</span>
-      <span id="tt_firmware" class="indicator off">FW: ---</span>
-      <span id="tt_cpu_load" class="indicator off">CPU: ---</span>
-      <span class="toolbar-sep"></span>
-      <button id="tlogBtn" class="tlog-btn" onclick="toggleTlog()">&#9679; LOG</button>
+      <div id="tbHamburger" onclick="toggleToolbarMenu()">
+        <span></span><span></span><span></span>
+      </div>
+      <div id="tbMenu" class="hidden">
+        <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()">&#x1F4CB; Extract Log Pos</button>
+        <div class="tb-menu-sep"></div>
+        <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()">&#x2699; Settings</button>
+      </div>
+      <div class="tb-brand">
+        <svg class="tb-brand-icon" viewBox="0 0 24 24" width="18" height="18">
+          <defs><linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>
+          <path d="M12 2L3 7v5c0 5.25 3.83 10.15 9 11 5.17-.85 9-5.75 9-11V7l-9-5z" fill="url(#brandGrad)" opacity="0.9"/>
+          <path d="M12 4.5L5.5 8.5v3.5c0 4.2 3 8.1 6.5 8.8 3.5-.7 6.5-4.6 6.5-8.8V8.5L12 4.5z" fill="#1e293b"/>
+          <text x="12" y="16" text-anchor="middle" fill="#818cf8" font-size="9" font-weight="800" font-family="system-ui">S</text>
+        </svg>
+        <span class="tb-brand-name">SGC</span>
+        <span class="tb-brand-ver">V1.0.2</span>
+      </div>
+      <div class="tb-sep"></div>
+      <div id="waterfallWrap" class="disconnected"><canvas id="waterfallCanvas"></canvas></div>
+      <button id="connectBtn" class="tb-btn tb-connect" onclick="connectVehicle()">&#x25CF; Connect</button>
+      <div class="tb-group">
+        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; LOG</button>
+        <button id="measureBtn" class="tb-btn" onclick="toggleMeasure()">&#x1F4D0; Measure</button>
+        <button id="missionBtn" class="tb-btn" onclick="toggleMissionPanel()">&#x2708; Mission</button>
+        <button id="brgBtn" class="tb-btn" onclick="toggleBrgPanel()">&#x1F9ED; Bearing WP</button>
+        <button id="dmsBtn" class="tb-btn" onclick="toggleDmsPanel()">&#x1F310; DMS</button>
+        <button id="fenceBtn" class="tb-btn" onclick="toggleFencePanel()">&#x26F0; Fence</button>
+      </div>
+      <div style="flex:1"></div>
+      <img src="/static/swl.png" id="topLogo" alt="SWL">
     </div>
-    <img src="/logo.png" id="logoLine" alt="SGC">
 
     <div id="main">
       <div id="sidebar">
-        <div id="sidebarTabs">
-          <span class="sidebar-tab active" data-tab="telemetry" onclick="switchSidebarTab('telemetry')">TELEMETRY</span>
-          <span class="sidebar-tab" data-tab="charts" onclick="switchSidebarTab('charts')">CHARTS</span>
-          <span class="sidebar-tab" data-tab="inspector" onclick="switchSidebarTab('inspector')">INSPECTOR</span>
+        <div class="sidebar-btn active" data-tab="telemetry" onclick="switchSidebarTab('telemetry')" title="Telemetry">
+          <span class="sidebar-btn-icon">&#x1F4E1;</span>
+          <span class="sidebar-btn-label">DATA</span>
         </div>
-        <div id="telemetryPanel">
-          <div class="telemetry-group">
-            <div class="group-title">GPS</div>
-            <div class="group-content">
-              <div class="row"><span class="row-label">Lat</span><span class="row-value" id="t_lat">0.0000000</span><span class="row-unit">&deg;</span></div>
-              <div class="row"><span class="row-label">Lon</span><span class="row-value" id="t_lon">0.0000000</span><span class="row-unit">&deg;</span></div>
-              <div class="row"><span class="row-label">Alt</span><span class="row-value" id="t_alt">0.00</span><span class="row-unit">m</span></div>
-              <div class="row"><span class="row-label">Speed</span><span class="row-value" id="t_speed">0.00</span><span class="row-unit">m/s</span></div>
-              <div class="row"><span class="row-label">Heading</span><span class="row-value" id="t_heading">0.0</span><span class="row-unit">&deg;</span></div>
-            </div>
-          </div>
-          <div class="telemetry-group">
-            <div class="group-title">BATTERY</div>
-            <div class="group-content">
-              <div class="row"><span class="row-label">Voltage</span><span class="row-value" id="t_volt">0.00</span><span class="row-unit">V</span></div>
-              <div class="row"><span class="row-label">Current</span><span class="row-value" id="t_current">0.00</span><span class="row-unit">A</span></div>
-              <div class="row"><span class="row-label">Remaining</span><span class="row-value" id="t_batt_rem">0</span><span class="row-unit">%</span></div>
-              <div class="battery-bar"><div class="battery-fill" id="batteryFill" style="width:0%"></div><span class="battery-text">0%</span></div>
-            </div>
-          </div>
-          <div class="telemetry-group">
-            <div class="group-title">ATTITUDE</div>
-            <div class="group-content">
-              <div class="row"><span class="row-label">Roll</span><span class="row-value" id="t_roll">0.0</span><span class="row-unit">&deg;</span></div>
-              <div class="row"><span class="row-label">Pitch</span><span class="row-value" id="t_pitch">0.0</span><span class="row-unit">&deg;</span></div>
-              <div class="row"><span class="row-label">Yaw</span><span class="row-value" id="t_yaw">0.0</span><span class="row-unit">&deg;</span></div>
-              <canvas id="attitudeCanvas" width="220" height="60"></canvas>
-            </div>
-          </div>
-          <div class="telemetry-group">
-            <div class="group-title">STATUS</div>
-            <div class="group-content">
-              <div class="row"><span class="row-label">Mode</span><span class="row-value" id="t_mode">---</span></div>
-              <div class="row"><span class="row-label">Armed</span><span class="row-value" id="t_armed">No</span></div>
-              <div class="row"><span class="row-label">Sats</span><span class="row-value" id="t_sats">0</span></div>
-              <div class="row"><span class="row-label">Fix</span><span class="row-value" id="t_fix">No Fix</span></div>
-              <div class="row"><span class="row-label">HDOP</span><span class="row-value" id="t_hdop">0.00</span></div>
-            </div>
-          </div>
-          <div class="telemetry-group">
-            <div class="group-title">HOME</div>
-            <div class="group-content">
-              <div class="row"><span class="row-label">Distance</span><span class="row-value" id="t_home_dist">--</span><span class="row-unit">m</span></div>
-              <div class="row"><span class="row-label">Bearing</span><span class="row-value" id="t_home_bearing">--</span><span class="row-unit">&deg;</span></div>
-            </div>
-          </div>
+        <div class="sidebar-btn" data-tab="charts" onclick="switchSidebarTab('charts')" title="Charts">
+          <span class="sidebar-btn-icon">&#x1F4C8;</span>
+          <span class="sidebar-btn-label">CHART</span>
         </div>
-        <div id="chartsPanel" class="hidden">
-          <div class="chart-box">
-            <div class="chart-title">ALTITUDE (m)</div>
-            <canvas id="chartAlt" height="80"></canvas>
-          </div>
-          <div class="chart-box">
-            <div class="chart-title">GROUND SPEED (m/s)</div>
-            <canvas id="chartSpeed" height="80"></canvas>
-          </div>
-          <div class="chart-box">
-            <div class="chart-title">BATTERY VOLTAGE (V)</div>
-            <canvas id="chartVolt" height="80"></canvas>
-          </div>
-          <div class="chart-box">
-            <div class="chart-title">BATTERY CURRENT (A)</div>
-            <canvas id="chartCurrent" height="80"></canvas>
-          </div>
-        </div>
-        <div id="inspectorPanel" class="hidden">
-          <div class="inspector-toolbar">
-            <input type="text" id="inspectorFilter" placeholder="Filter by type..." oninput="inspectorFilter()">
-            <button id="inspectorPauseBtn" class="inspector-btn" onclick="toggleInspectorPause()">PAUSE</button>
-            <button class="inspector-btn" onclick="inspectorClear()">CLEAR</button>
-          </div>
-          <div class="inspector-count" id="inspectorCount">0 messages</div>
-          <div id="inspectorList"></div>
+        <div class="sidebar-btn" data-tab="inspector" onclick="switchSidebarTab('inspector')" title="Inspector">
+          <span class="sidebar-btn-icon">&#x1F50D;</span>
+          <span class="sidebar-btn-label">LOG</span>
         </div>
       </div>
 
-      <div id="map" class="map-container"></div>
+      <div class="map-container">
+        <div id="map"></div>
+        <div id="hudOverlay">
+          <div id="hudTopStatus">
+            <span id="hudConn"><span class="hud-dot off"></span> Unconnected</span>
+            <span id="hudGps"><span class="hud-dot off"></span> No GPS</span>
+          </div>
+          <button id="hudToggleBtn" title="Toggle HUD">&#9660;</button>
+          <div id="hudLeftCol">
+            <button class="hud-col-toggle" id="hudLeftToggle" title="Toggle left panel">&#9668;</button>
+            <div class="hud-box">
+              <span class="hud-label">PITCH</span>
+              <span class="hud-val" id="hudPitch">0.0</span>
+              <span class="hud-unit">°</span>
+            </div>
+            <div class="hud-box">
+              <span class="hud-label">YAW</span>
+              <span class="hud-val" id="hudYaw">0.0</span>
+              <span class="hud-unit">°</span>
+            </div>
+            <div class="hud-box">
+              <span class="hud-label">ROLL</span>
+              <span class="hud-val" id="hudRoll">0.0</span>
+              <span class="hud-unit">°</span>
+            </div>
+          </div>
+          <div id="hudAttWrap">
+            <canvas id="hudCanvas" width="180" height="180"></canvas>
+          </div>
+          <div id="hudRightCol">
+            <button class="hud-col-toggle" id="hudRightToggle" title="Toggle right panel">&#9658;</button>
+            <div class="hud-box">
+              <span class="hud-label">CLIMB</span>
+              <span class="hud-val" id="hudClimb">0.0</span>
+              <span class="hud-unit">m/s</span>
+            </div>
+            <div class="hud-box">
+              <span class="hud-label">AIR</span>
+              <span class="hud-val" id="hudAirspeed">0.0</span>
+              <span class="hud-unit">m/s</span>
+            </div>
+            <div class="hud-box">
+              <span class="hud-label">ALT</span>
+              <span class="hud-val" id="hudAltitude">0.0</span>
+              <span class="hud-unit">m</span>
+            </div>
+            <div class="hud-box hud-time">
+              <span class="hud-time-icon">&#9201;</span>
+              <span class="hud-val" id="hudFlightTime">00:00</span>
+            </div>
+          </div>
+          <div id="hudBottomRow">
+            <div class="hud-box hud-wide">
+              <span class="hud-label">GND</span>
+              <span class="hud-val" id="hudGround">0.0</span>
+              <span class="hud-unit">m/s</span>
+              <span class="hud-sep"></span>
+              <span class="hud-label">ASL</span>
+              <span class="hud-val" id="hudAsl">0.0</span>
+              <span class="hud-unit">m</span>
+            </div>
+            <div class="hud-box hud-wide">
+              <span class="hud-label">WIND</span>
+              <span class="hud-val" id="hudWind">N/A</span>
+              <span class="hud-sep"></span>
+              <span class="hud-label">DIST</span>
+              <span class="hud-val" id="hudDist">0</span>
+              <span class="hud-unit">m</span>
+            </div>
+          </div>
+        </div>
+        <div id="measureInfo" class="measure-info hidden">
+          <div class="measure-info-header">&#9751; Measuring</div>
+          <div class="measure-info-body">
+            <div class="measure-info-row">
+              <span class="measure-info-label">Distance</span>
+              <span class="measure-info-val" id="measureDist">---</span>
+            </div>
+            <div class="measure-info-row">
+              <span class="measure-info-label">Bearing</span>
+              <span class="measure-info-val" id="measureBearing">---</span>
+            </div>
+          </div>
+          <div class="measure-units" id="measureUnits">
+            <button class="measure-unit active" data-unit="m">m</button>
+            <button class="measure-unit" data-unit="cm">cm</button>
+            <button class="measure-unit" data-unit="km">km</button>
+            <span class="measure-unit-sep"></span>
+            <button class="measure-unit" data-unit="in">in</button>
+            <button class="measure-unit" data-unit="ft">ft</button>
+          </div>
+        </div>
+        <div id="missionPanel" class="mission-info hidden">
+          <div class="mission-info-header">&#9992; Mission Control</div>
+          <div class="mission-info-body">
+            <div class="mission-info-row">
+              <span class="mission-info-label">Current WP</span>
+              <span class="mission-info-val" id="missionCurrentWp">-- / --</span>
+            </div>
+            <div class="mission-info-row">
+              <span class="mission-info-label">Dist to Next</span>
+              <span class="mission-info-val" id="missionDistNext">-- m</span>
+            </div>
+            <hr class="mission-sep">
+            <div class="mission-info-row">
+              <span class="mission-info-label">Mode</span>
+              <span class="mission-info-val" id="missionMode">---</span>
+            </div>
+            <div class="mission-info-row">
+              <span class="mission-info-label">Altitude</span>
+              <span class="mission-info-val" id="missionAlt">0.0 m</span>
+            </div>
+            <div class="mission-info-row">
+              <span class="mission-info-label">Speed</span>
+              <span class="mission-info-val" id="missionSpeed">0.0 m/s</span>
+            </div>
+            <div class="mission-info-row">
+              <span class="mission-info-label">Battery</span>
+              <span class="mission-info-val" id="missionBatt">--%</span>
+            </div>
+            <hr class="mission-sep">
+          </div>
+          <div class="mission-controls">
+            <button class="mission-btn" onclick="socket.emit('set_mode',{mode:'LOITER'});log('Mission paused (LOITER)','info')">Pause</button>
+            <button class="mission-btn" onclick="socket.emit('set_mode',{mode:'AUTO'});log('Mission resumed (AUTO)','info')">Resume</button>
+            <button class="mission-btn mission-btn-warn" onclick="socket.emit('set_mode',{mode:'RTL'});log('RTL','info')">RTL</button>
+            <button class="mission-btn mission-btn-danger" onclick="socket.emit('set_mode',{mode:'LAND'});log('LAND','info')">LAND</button>
+          </div>
+        </div>
+        <div id="brgPanel" class="brg-info hidden">
+          <div class="brg-info-header">&#9783; Add WP by Bearing &amp; Distance</div>
+          <div class="brg-info-body">
+            <div class="brg-row">
+              <span class="brg-label">Bearing (&deg;)</span>
+              <input type="number" id="brgAngle" class="brg-input" value="90" min="0" max="360" step="1">
+            </div>
+            <div class="brg-row">
+              <span class="brg-label">Distance (m)</span>
+              <input type="number" id="brgDist" class="brg-input" value="100" min="0" step="1">
+            </div>
+            <hr class="brg-sep">
+            <div class="brg-label" style="margin-bottom:2px">Reference:</div>
+            <div class="brg-radio-row">
+              <label class="brg-radio"><input type="radio" name="brgRef" value="aircraft" checked> Aircraft</label>
+              <label class="brg-radio"><input type="radio" name="brgRef" value="wp"> Current WP</label>
+            </div>
+            <button class="brg-add-btn" onclick="addBrgWaypoint()">+ Add Waypoint</button>
+          </div>
+        </div>
+        <div id="dmsPanel" class="dms-info hidden">
+          <div class="dms-info-header">&#9730; DMS Conversion Tool</div>
+          <div class="dms-info-body">
+            <div class="dms-section">
+              <div class="dms-section-title">Decimal &rarr; DMS</div>
+              <div class="dms-row">
+                <span class="dms-label">Lat</span>
+                <input type="number" id="dmsDdLat" class="dms-input" value="32.0347969" step="any">
+              </div>
+              <div class="dms-row">
+                <span class="dms-label">Lon</span>
+                <input type="number" id="dmsDdLon" class="dms-input" value="118.8134989" step="any">
+              </div>
+              <button class="dms-btn" onclick="convertToDms()">&rarr; Convert to DMS</button>
+              <div class="dms-result" id="dmsResultDms">Lat: -- | Lon: --</div>
+            </div>
+            <hr class="dms-sep">
+            <div class="dms-section">
+              <div class="dms-section-title">DMS &rarr; Decimal</div>
+              <div class="dms-row">
+                <span class="dms-label">Lat</span>
+                <input type="number" id="dmsDmsLatDeg" class="dms-input-sm" value="32" placeholder="&#176;">
+                <input type="number" id="dmsDmsLatMin" class="dms-input-sm" value="2" placeholder="&#39;">
+                <input type="number" id="dmsDmsLatSec" class="dms-input-sm" value="5.269" placeholder="&#34;" step="any">
+              </div>
+              <div class="dms-row">
+                <span class="dms-label">Lon</span>
+                <input type="number" id="dmsDmsLonDeg" class="dms-input-sm" value="118" placeholder="&#176;">
+                <input type="number" id="dmsDmsLonMin" class="dms-input-sm" value="48" placeholder="&#39;">
+                <input type="number" id="dmsDmsLonSec" class="dms-input-sm" value="48.596" placeholder="&#34;" step="any">
+              </div>
+              <button class="dms-btn" onclick="convertToDd()">&rarr; Convert to Decimal</button>
+              <div class="dms-result" id="dmsResultDd">Lat: -- | Lon: --</div>
+            </div>
+          </div>
+        </div>
+        <div id="fencePanel" class="fence-info hidden">
+          <div class="fence-info-header">&#9916; Geofence</div>
+          <div class="fence-info-body">
+            <div class="fence-section-title">Polygon Fence</div>
+            <div id="fencePolyTable" class="fence-table"></div>
+            <button class="fence-btn-sm" onclick="addFencePolygon()">+ Add Polygon</button>
+            <hr class="fence-sep">
+            <div class="fence-section-title">Circle Fence</div>
+            <div id="fenceCircleTable" class="fence-table"></div>
+            <button class="fence-btn-sm" onclick="addFenceCircle()">+ Add Circle</button>
+            <hr class="fence-sep">
+            <div class="fence-actions">
+              <button class="fence-btn fence-btn-upload" onclick="uploadFence()">Upload All</button>
+              <button class="fence-btn fence-btn-danger" onclick="clearFence()">Clear</button>
+            </div>
+            <div id="fenceStatus" class="fence-status">No fence loaded</div>
+          </div>
+        </div>
+
+        <div id="sideCardTelemetry" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('telemetry')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x1F4E1; Telemetry Data</span>
+          </div>
+          <div class="side-card-body">
+            <div class="telemetry-group">
+              <div class="group-title">GPS</div>
+              <div class="group-content">
+                <div class="row"><span class="row-label">Lat</span><span class="row-value" id="t_lat">0.0000000</span><span class="row-unit">&deg;</span></div>
+                <div class="row"><span class="row-label">Lon</span><span class="row-value" id="t_lon">0.0000000</span><span class="row-unit">&deg;</span></div>
+                <div class="row"><span class="row-label">Alt</span><span class="row-value" id="t_alt">0.00</span><span class="row-unit">m</span></div>
+                <div class="row"><span class="row-label">Speed</span><span class="row-value" id="t_speed">0.00</span><span class="row-unit">m/s</span></div>
+                <div class="row"><span class="row-label">Heading</span><span class="row-value" id="t_heading">0.0</span><span class="row-unit">&deg;</span></div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">BATTERY</div>
+              <div class="group-content">
+                <div class="row"><span class="row-label">Voltage</span><span class="row-value" id="t_volt">0.00</span><span class="row-unit">V</span></div>
+                <div class="row"><span class="row-label">Current</span><span class="row-value" id="t_current">0.00</span><span class="row-unit">A</span></div>
+                <div class="row"><span class="row-label">Remaining</span><span class="row-value" id="t_batt_rem">0</span><span class="row-unit">%</span></div>
+                <div class="battery-bar"><div class="battery-fill" id="batteryFill" style="width:0%"></div><span class="battery-text">0%</span></div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">ATTITUDE</div>
+              <div class="group-content">
+                <div class="row"><span class="row-label">Roll</span><span class="row-value" id="t_roll">0.0</span><span class="row-unit">&deg;</span></div>
+                <div class="row"><span class="row-label">Pitch</span><span class="row-value" id="t_pitch">0.0</span><span class="row-unit">&deg;</span></div>
+                <div class="row"><span class="row-label">Yaw</span><span class="row-value" id="t_yaw">0.0</span><span class="row-unit">&deg;</span></div>
+                <canvas id="attitudeCanvas" width="220" height="60"></canvas>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">STATUS</div>
+              <div class="group-content">
+                <div class="row"><span class="row-label">Mode</span><span class="row-value" id="t_mode">---</span></div>
+                <div class="row"><span class="row-label">Armed</span><span class="row-value" id="t_armed">No</span></div>
+                <div class="row"><span class="row-label">Sats</span><span class="row-value" id="t_sats">0</span></div>
+                <div class="row"><span class="row-label">Fix</span><span class="row-value" id="t_fix">No Fix</span></div>
+                <div class="row"><span class="row-label">HDOP</span><span class="row-value" id="t_hdop">0.00</span></div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">HOME</div>
+              <div class="group-content">
+                <div class="row"><span class="row-label">Distance</span><span class="row-value" id="t_home_dist">--</span><span class="row-unit">m</span></div>
+                <div class="row"><span class="row-label">Bearing</span><span class="row-value" id="t_home_bearing">--</span><span class="row-unit">&deg;</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="sideCardCharts" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('charts')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x1F4C8; Charts</span>
+          </div>
+          <div class="side-card-body">
+            <div class="chart-box">
+              <div class="chart-title">ALTITUDE (m)</div>
+              <canvas id="chartAlt" height="80"></canvas>
+            </div>
+            <div class="chart-box">
+              <div class="chart-title">GROUND SPEED (m/s)</div>
+              <canvas id="chartSpeed" height="80"></canvas>
+            </div>
+            <div class="chart-box">
+              <div class="chart-title">BATTERY VOLTAGE (V)</div>
+              <canvas id="chartVolt" height="80"></canvas>
+            </div>
+            <div class="chart-box">
+              <div class="chart-title">BATTERY CURRENT (A)</div>
+              <canvas id="chartCurrent" height="80"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <div id="sideCardInspector" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('inspector')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x1F50D; Message Inspector</span>
+          </div>
+          <div class="side-card-body">
+            <div class="inspector-toolbar">
+              <input type="text" id="inspectorFilter" placeholder="Filter by type..." oninput="inspectorFilter()">
+              <button id="inspectorPauseBtn" class="inspector-btn" onclick="toggleInspectorPause()">PAUSE</button>
+              <button class="inspector-btn" onclick="inspectorClear()">CLEAR</button>
+            </div>
+            <div class="inspector-count" id="inspectorCount">0 messages</div>
+            <div id="inspectorList"></div>
+          </div>
+        </div>
+      </div>
 
       <div id="actionPanel">
         <div id="actionTabs">
@@ -279,7 +521,7 @@
     <div id="notifContainer"></div>
 
     <div id="statusbar">
-      <span id="statusMessage">Ready &mdash; connect to a vehicle to begin</span>
+      <span id="statusMessage">Starting...</span>
       <div class="status-right">
         <span id="s_connection" class="status-indicator" style="color:#ef4444">&#9679; Disconnected</span>
         <span class="status-sep"></span>
@@ -296,15 +538,22 @@
         <span id="s_mission" class="status-indicator" style="color:#0ea5e9">&#9679; Mission: --</span>
         <span class="status-sep"></span>
         <span id="s_fence" class="status-indicator" style="color:#eab308">&#9679; Fence: --</span>
+        <span class="status-sep"></span>
+        <span id="heartbeatInd" class="status-indicator">&#9679; Heartbeat: --</span>
+        <span id="sysidInd" class="status-indicator">SysID: --</span>
+        <span class="status-sep"></span>
+        <span id="tt_type" class="status-indicator">Type: ---</span>
+        <span id="tt_firmware" class="status-indicator">FW: ---</span>
+        <span id="tt_cpu_load" class="status-indicator">CPU: ---</span>
       </div>
-    </div>
-  </div>
-
+          </div>
+        </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-  <script src="/static/js/toolbar.js?v=10"></script>
+  <script src="/static/js/toolbar.js?v=13"></script>
+  <script src="/static/js/waterfall.js?v=1"></script>
   <script src="/static/js/grid.js?v=10"></script>
-  <script src="/static/js/app.js?v=10"></script>
+  <script src="/static/js/app.js?v=13"></script>
 </body>
 </html>
