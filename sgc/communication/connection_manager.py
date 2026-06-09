@@ -122,6 +122,10 @@ class MAVLinkConnection:
         self._fence_count = 0
         self._fence_download_seq = None
 
+        self.rally_points = []  # list of (lat, lon, alt)
+        self._rally_count = 0
+        self._rally_download_seq = None
+
     def add_listener(self, callback):
         self.listeners.append(callback)
 
@@ -293,6 +297,44 @@ class MAVLinkConnection:
         self._fence_download_seq = None
         self.set_param("FENCE_TOTAL", 0)
         self._emit("log", {"message": "Fence cleared (FENCE_TOTAL=0)", "level": "info"})
+
+    def download_rally(self):
+        try:
+            self.rally_points = []
+            self._rally_count = 0
+            self._rally_download_seq = 0
+            self.master.mav.rally_fetch_point_send(
+                self.master.target_system, self.master.target_component, 0
+            )
+            self._emit("log", {"message": "Downloading rally points...", "level": "info"})
+        except Exception as e:
+            self._emit("log", {"message": f"Rally download failed: {e}", "level": "error"})
+
+    def upload_rally(self, points):
+        try:
+            count = len(points)
+            self.set_param("RALLY_TOTAL", count)
+            for idx, (lat, lon, alt) in enumerate(points):
+                lat_e7 = int(lat * 1e7)
+                lon_e7 = int(lon * 1e7)
+                self.master.mav.rally_point_send(
+                    self.master.target_system, self.master.target_component,
+                    idx, count, lat_e7, lon_e7, int(alt), 0, 0, 0,
+                )
+            self.rally_points = [(lat, lon, alt) for lat, lon, alt in points]
+            self._emit("log", {"message": f"Uploaded {count} rally points", "level": "success"})
+            self._emit("rally_data", {"points": [(lat, lon, alt) for lat, lon, alt in points], "count": count})
+            self._emit("rally_upload_complete", {"count": count, "success": True})
+        except Exception as e:
+            self._emit("log", {"message": f"Rally upload failed: {e}", "level": "error"})
+            self._emit("rally_upload_complete", {"count": 0, "success": False})
+
+    def clear_rally(self):
+        self.rally_points = []
+        self._rally_count = 0
+        self._rally_download_seq = None
+        self.set_param("RALLY_TOTAL", 0)
+        self._emit("log", {"message": "Rally points cleared (RALLY_TOTAL=0)", "level": "info"})
 
     def _emit_mavlink_inspector(self, msg):
         try:
@@ -597,6 +639,29 @@ class MAVLinkConnection:
                     self._fence_download_seq = None
                     self._emit("log", {"message": f"Downloaded {count} fence points", "level": "success"})
                     self._emit("fence_data", {"points": self.fence_points, "count": count})
+
+        elif msg_type == "RALLY_POINT":
+            if self._rally_download_seq is not None:
+                idx = getattr(msg, 'idx', 0)
+                count = getattr(msg, 'count', 0)
+                lat = getattr(msg, 'lat', 0) / 1e7
+                lng = getattr(msg, 'lng', 0) / 1e7
+                alt = getattr(msg, 'alt', 0)
+                if idx < len(self.rally_points):
+                    self.rally_points[idx] = (lat, lng, alt)
+                else:
+                    self.rally_points.append((lat, lng, alt))
+                self._rally_count = count
+                if idx + 1 < count:
+                    self._rally_download_seq = idx + 1
+                    self.master.mav.rally_fetch_point_send(
+                        self.master.target_system, self.master.target_component,
+                        idx + 1,
+                    )
+                else:
+                    self._rally_download_seq = None
+                    self._emit("log", {"message": f"Downloaded {count} rally points", "level": "success"})
+                    self._emit("rally_data", {"points": self.rally_points, "count": count})
 
         else:
             pass

@@ -16,7 +16,8 @@ _connection = None
 _connection_lock = threading.Lock()
 _pending_reboot_conn = None  # (conn_str, baud) saved before reboot
 _last_mission = None  # last downloaded mission data
-_last_fence = None  # last downloaded fence data
+_last_fence = None    # last downloaded fence data
+_last_rally = None    # last downloaded rally data
 _log_buffer = []  # last 200 log messages
 _startup_done = False
 
@@ -57,6 +58,10 @@ def tuning_page():
 @app.route("/fence")
 def fence_page():
     return render_template("fence.html")
+
+@app.route("/rally")
+def rally_page():
+    return render_template("rally.html")
 
 
 @app.route("/config")
@@ -474,8 +479,36 @@ def handle_fence_enable(data):
             )
             _broadcast("log", {"message": "Fence disabled", "level": "info"})
 
+@socketio.on("rally_download")
+def handle_rally_download():
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        _connection.download_rally()
+
+@socketio.on("rally_upload")
+def handle_rally_upload(data):
+    try:
+        with _connection_lock:
+            if not (_connection and _connection.running):
+                emit("log", {"message": "Not connected", "level": "warning"})
+                return
+            points = data.get("points", [])
+            pts = [(p['lat'], p['lon'], p.get('alt', 100)) for p in points]
+            _connection.upload_rally(pts)
+    except Exception as e:
+        _broadcast("log", {"message": f"Rally upload crashed: {e}", "level": "error"})
+
+@socketio.on("rally_clear")
+def handle_rally_clear():
+    with _connection_lock:
+        if _connection:
+            _connection.clear_rally()
+            emit("rally_data", {"points": [], "count": 0})
+
 def _on_mavlink_event(event, data):
-    global _last_mission, _last_fence
+    global _last_mission, _last_fence, _last_rally
     if event == "log":
         _broadcast("log", data)
     elif event == "state_update":
@@ -483,8 +516,10 @@ def _on_mavlink_event(event, data):
         if not data.get("connected", True):
             _last_mission = None
             _last_fence = None
+            _last_rally = None
             _broadcast("mission_data", {"waypoints": [], "count": 0})
             _broadcast("fence_data", {"points": [], "count": 0})
+            _broadcast("rally_data", {"points": [], "count": 0})
             if _pending_reboot_conn:
                 thread = threading.Thread(target=_auto_reconnect, daemon=True)
                 thread.start()
@@ -502,6 +537,11 @@ def _on_mavlink_event(event, data):
         _broadcast("fence_data", data)
     elif event == "fence_upload_complete":
         _broadcast("fence_upload_complete", data)
+    elif event == "rally_data":
+        _last_rally = data
+        _broadcast("rally_data", data)
+    elif event == "rally_upload_complete":
+        _broadcast("rally_upload_complete", data)
 
 
 @socketio.on("request_mission")
@@ -514,6 +554,11 @@ def handle_request_mission():
 def handle_request_fence():
     if _last_fence:
         emit("fence_data", _last_fence)
+
+@socketio.on("request_rally")
+def handle_request_rally():
+    if _last_rally:
+        emit("rally_data", _last_rally)
 
 
 @socketio.on("request_logs")

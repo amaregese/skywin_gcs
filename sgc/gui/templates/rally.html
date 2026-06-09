@@ -3,17 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SGC - Mission Planner</title>
+  <title>SGC - Rally Points</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/static/css/style.css?v=12" />
   <style>
     #main { flex-direction: row; }
-    #planSidebar {
+    #rallySidebar {
       width: 320px; min-width: 280px; background: #1e293b; overflow-y: auto;
       border-right: 1px solid #334155; display: flex; flex-direction: column; flex-shrink: 0;
     }
-    #planSidebar h3 {
-      color: #7c3aed; font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+    #rallySidebar h3 {
+      color: #22c55e; font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
       padding: 12px 12px 8px; margin: 0;
     }
     .wp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -23,21 +23,13 @@
     }
     .wp-table td { padding: 4px 8px; border-bottom: 1px solid #1e293b; }
     .wp-table tr:hover td { background: #334155; }
-    .wp-table tr.active td { background: #7c3aed22; border-left: 3px solid #7c3aed; }
-    .wp-num { color: #7c3aed; font-weight: 700; width: 30px; }
-    .wp-cell { font-family: 'SF Mono', 'Consolas', monospace; font-size: 11px; color: #e2e8f0; cursor: default; }
-    .wp-cell:hover { color: #7c3aed; }
-    .wp-edit {
-      background: #0f172a; color: #e2e8f0; border: 1px solid #7c3aed;
-      border-radius: 4px; padding: 2px 6px; font-size: 11px; font-family: 'SF Mono', 'Consolas', monospace;
-      width: 100%; outline: none; box-sizing: border-box;
-    }
-    .wp-table select {
+    .wp-num { color: #22c55e; font-weight: 700; width: 30px; }
+    .wp-table input {
       background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
-      border-radius: 4px; padding: 3px 6px; font-size: 11px; width: 100%;
+      border-radius: 4px; padding: 3px 6px; font-size: 12px; width: 100%;
       outline: none; box-sizing: border-box;
     }
-    .wp-table select:focus { border-color: #7c3aed; }
+    .wp-table input:focus { border-color: #22c55e; }
     .plan-toolbar { padding: 8px 12px; display: flex; gap: 6px; align-items: center; }
     .plan-toolbar button {
       background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
@@ -45,10 +37,8 @@
       cursor: pointer; transition: background 0.15s;
     }
     .plan-toolbar button:hover { background: #334155; }
-.plan-toolbar button.primary { background: #7c3aed; border-color: #7c3aed; }
-.plan-toolbar button.primary:hover { background: #6d28d9; }
-.plan-toolbar button.success { background: #22c55e; border-color: #22c55e; color: #0f172a; }
-.plan-toolbar button.success:hover { background: #16a34a; }
+    .plan-toolbar button.primary { background: #22c55e; border-color: #22c55e; color: #0f172a; }
+    .plan-toolbar button.primary:hover { background: #16a34a; }
     .plan-dd { position: relative; }
     .plan-dd-trigger { display: flex; align-items: center; gap: 4px; }
     .dd-arrow { font-size: 10px; }
@@ -74,7 +64,7 @@
 <body>
   <div id="app">
     <nav id="menubar">
-      <div class="menu-title">SGC - Mission Planner</div>
+      <div class="menu-title">SGC - Rally Points</div>
     </nav>
 
     <div id="toolbar">
@@ -84,23 +74,18 @@
     </div>
 
     <div id="main">
-      <div id="planSidebar">
-        <h3>MISSION WAYPOINTS</h3>
+      <div id="rallySidebar">
+        <h3>RALLY POINTS</h3>
         <div class="plan-toolbar" onclick="event.stopPropagation()">
-          <button class="primary" onclick="uploadMission()">UPLOAD</button>
-          <button class="success" onclick="startMission()">START</button>
+          <button class="primary" onclick="uploadRally()">UPLOAD</button>
           <div class="plan-dd">
-            <button class="plan-dd-trigger" onclick="togglePlanDropdown(event)">MORE <span class="dd-arrow">&#9662;</span></button>
-            <div id="planDropdown" class="plan-dd-menu hidden">
-              <div onclick="downloadMission();closePlanDropdown()">Download</div>
-              <div onclick="reverseMission();closePlanDropdown()">Reverse</div>
+            <button class="plan-dd-trigger" onclick="toggleRallyDropdown(event)">MORE <span class="dd-arrow">&#9662;</span></button>
+            <div id="rallyDropdown" class="plan-dd-menu hidden">
+              <div onclick="downloadRally();closeRallyDropdown()">Download</div>
+              <div onclick="saveRallyFile();closeRallyDropdown()">Save to File</div>
+              <div onclick="loadRallyFile();closeRallyDropdown()">Load from File</div>
               <div class="dd-sep"></div>
-              <div onclick="setAllAltitudes();closePlanDropdown()">Set All Altitudes</div>
-              <div class="dd-sep"></div>
-              <div onclick="saveMissionFile();closePlanDropdown()">Save to File</div>
-              <div onclick="loadMissionFile();closePlanDropdown()">Load from File</div>
-              <div class="dd-sep"></div>
-              <div class="dd-danger" onclick="clearMission();closePlanDropdown()">Clear All</div>
+              <div class="dd-danger" onclick="clearRally();closeRallyDropdown()">Clear All</div>
             </div>
           </div>
         </div>
@@ -108,16 +93,15 @@
           <table class="wp-table">
             <thead><tr>
               <th style="width:30px">#</th>
-              <th style="width:70px">Cmd</th>
-              <th style="width:90px">Lat</th>
-              <th style="width:90px">Lon</th>
+              <th style="width:100px">Lat</th>
+              <th style="width:100px">Lon</th>
               <th style="width:50px">Alt</th>
               <th style="width:24px"></th>
             </tr></thead>
-            <tbody id="wpList"></tbody>
+            <tbody id="rallyList"></tbody>
           </table>
         </div>
-        <div class="plan-status" id="planStatus">No mission loaded. Click the map to add waypoints.</div>
+        <div class="plan-status" id="rallyStatus">Click the map to add rally points.</div>
       </div>
 
       <div id="map" class="map-container"></div>
@@ -126,20 +110,20 @@
     <div id="notifContainer"></div>
 
     <div id="statusbar">
-      <span id="statusMessage">Mission Planner</span>
+      <span id="statusMessage">Rally Points Editor</span>
     </div>
   </div>
 
   <div id="mapContextMenu" class="context-menu hidden">
-    <div onclick="addWaypointFromMenu()">Add waypoint here</div>
+    <div onclick="addRallyPointFromMenu()">Add rally point here</div>
   </div>
 
-  <input type="file" id="missionFileInput" accept=".mission,.waypoints,.txt" style="display:none">
+  <input type="file" id="rallyFileInput" accept=".rally,.txt" style="display:none">
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="/static/js/toolbar.js?v=11"></script>
   <script src="/static/js/grid.js?v=10"></script>
-  <script src="/static/js/plan.js?v=11"></script>
+  <script src="/static/js/rally.js?v=2"></script>
 </body>
 </html>

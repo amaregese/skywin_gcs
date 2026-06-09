@@ -113,11 +113,23 @@ function initMap(lat, lon) {
 document.addEventListener('click', () => {
   const menu = document.getElementById('mapContextMenu');
   if (menu) menu.classList.add('hidden');
+  closeFenceDropdown();
 });
 
 document.addEventListener('DOMContentLoaded', () => {
   initMap(37.7749, -122.4194);
 });
+
+function toggleFenceDropdown(e) {
+  e.stopPropagation();
+  var dd = document.getElementById('fenceDropdown');
+  dd.classList.toggle('hidden');
+}
+
+function closeFenceDropdown() {
+  var dd = document.getElementById('fenceDropdown');
+  if (dd) dd.classList.add('hidden');
+}
 
 // --- Fence ---
 function downloadFence() {

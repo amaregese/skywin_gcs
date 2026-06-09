@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SGC - Geo-Fence Editor</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <link rel="stylesheet" href="/static/css/style.css?v=12" />
   <style>
     #main { flex-direction: row; }
     #fenceSidebar {
@@ -30,22 +30,34 @@
       outline: none; box-sizing: border-box;
     }
     .wp-table input:focus { border-color: #eab308; }
-    .plan-btns { padding: 10px 12px; display: flex; flex-wrap: wrap; gap: 6px; }
-    .plan-btns button {
+    .plan-toolbar { padding: 8px 12px; display: flex; gap: 6px; align-items: center; }
+    .plan-toolbar button {
       background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
       border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600;
       cursor: pointer; transition: background 0.15s;
     }
-    .plan-btns button:hover { background: #334155; }
-    .plan-btns button.primary { background: #7c3aed; border-color: #7c3aed; }
-    .plan-btns button.primary:hover { background: #6d28d9; }
-    .plan-btns button.danger { background: #ef4444; border-color: #ef4444; }
-    .plan-btns button.danger:hover { background: #dc2626; }
-    .plan-btns button.success { background: #22c55e; border-color: #22c55e; color: #0f172a; }
-    .plan-btns button.success:hover { background: #16a34a; }
-    .plan-btns button.warning { background: #eab308; border-color: #eab308; color: #0f172a; }
-    .plan-btns button.warning:hover { background: #d97706; }
-
+    .plan-toolbar button:hover { background: #334155; }
+    .plan-toolbar button.primary { background: #7c3aed; border-color: #7c3aed; }
+    .plan-toolbar button.primary:hover { background: #6d28d9; }
+    .plan-toolbar button.success { background: #22c55e; border-color: #22c55e; color: #0f172a; }
+    .plan-toolbar button.success:hover { background: #16a34a; }
+    .plan-dd { position: relative; }
+    .plan-dd-trigger { display: flex; align-items: center; gap: 4px; }
+    .dd-arrow { font-size: 10px; }
+    .plan-dd-menu {
+      position: absolute; top: 100%; left: 0; z-index: 10; min-width: 180px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+      padding: 4px 0; margin-top: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .plan-dd-menu.hidden { display: none; }
+    .plan-dd-menu div {
+      padding: 8px 14px; font-size: 12px; color: #e2e8f0; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .plan-dd-menu div:hover { background: #334155; }
+    .plan-dd-menu .dd-danger { color: #ef4444; }
+    .plan-dd-menu .dd-danger:hover { background: #334155; color: #dc2626; }
+    .dd-sep { height: 1px; background: #334155; margin: 4px 8px; padding: 0 !important; cursor: default !important; }
 
     .delete-wp { color: #ef4444; cursor: pointer; font-weight: 700; text-align: center; }
     .delete-wp:hover { color: #dc2626; }
@@ -60,21 +72,25 @@
 
     <div id="toolbar">
       <button class="toolbar-back" onclick="location.href='/'">&#8592;</button>
-      <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
-      <span class="toolbar-sep"></span>
-      <button id="tlogBtn" class="tlog-btn" onclick="toggleTlog()">&#9679; LOG</button>
+      <div style="flex:1"></div>
+      <img src="/logo.png" id="topLogo" alt="SGC">
     </div>
-    <img src="/logo.png" id="logoLine" alt="SGC">
 
     <div id="main">
       <div id="fenceSidebar">
         <h3>GEO-FENCE</h3>
-        <div class="plan-btns">
+        <div class="plan-toolbar" onclick="event.stopPropagation()">
           <button class="primary" onclick="uploadFence()">UPLOAD</button>
-          <button onclick="downloadFence()">DOWNLOAD</button>
-          <button onclick="saveFenceFile()">SAVE</button>
-          <button onclick="loadFenceFile()">LOAD</button>
-          <button class="danger" onclick="clearFence()">CLEAR</button>
+          <div class="plan-dd">
+            <button class="plan-dd-trigger" onclick="toggleFenceDropdown(event)">MORE <span class="dd-arrow">&#9662;</span></button>
+            <div id="fenceDropdown" class="plan-dd-menu hidden">
+              <div onclick="downloadFence();closeFenceDropdown()">Download</div>
+              <div onclick="saveFenceFile();closeFenceDropdown()">Save to File</div>
+              <div onclick="loadFenceFile();closeFenceDropdown()">Load from File</div>
+              <div class="dd-sep"></div>
+              <div class="dd-danger" onclick="clearFence();closeFenceDropdown()">Clear All</div>
+            </div>
+          </div>
         </div>
         <div style="flex:1;overflow-y:auto">
           <table class="wp-table">
@@ -110,6 +126,6 @@
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="/static/js/toolbar.js?v=11"></script>
   <script src="/static/js/grid.js?v=10"></script>
-  <script src="/static/js/fence.js?v=11"></script>
+  <script src="/static/js/fence.js?v=12"></script>
 </body>
 </html>

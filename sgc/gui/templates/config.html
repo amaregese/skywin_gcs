@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SGC - Configuration</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=10" />
+  <link rel="stylesheet" href="/static/css/style.css?v=13" />
   <style>
     #configMain {
       flex: 1; display: flex; gap: 12px; padding: 12px; overflow-y: auto;
@@ -43,16 +43,9 @@
 
     <div id="toolbar">
       <button class="toolbar-back" onclick="location.href='/'">&#8592;</button>
-      <span id="heartbeatInd" class="indicator off">&#9679; Heartbeat: --</span>
-      <span id="sysidInd" class="indicator">SysID: --</span>
-      <span class="toolbar-sep"></span>
-      <span id="tt_type" class="indicator off">Type: ---</span>
-      <span id="tt_firmware" class="indicator off">FW: ---</span>
-      <span id="tt_cpu_load" class="indicator off">CPU: ---</span>
-      <span class="toolbar-sep"></span>
-      <button id="tlogBtn" class="tlog-btn" onclick="toggleTlog()">&#9679; LOG</button>
+      <div style="flex:1"></div>
+      <img src="/logo.png" id="topLogo" alt="SGC">
     </div>
-    <img src="/logo.png" id="logoLine" alt="SGC">
 
     <div id="main" style="flex-direction:column">
       <div id="configMain">
