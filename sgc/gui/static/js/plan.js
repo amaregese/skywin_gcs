@@ -10,9 +10,7 @@ let isConnected = false;
 let selectedWp = -1;
 let mapInitialized = false;
 let autoDownloaded = false;
-let fenceGroup = null;
-let fencePoints = [];
-let wpLine = null;
+
 
 const CMD_NAMES = {
   16: 'Waypoint', 17: 'Loiter', 18: 'Loiter_Turns', 19: 'Loiter_Time',
@@ -33,9 +31,7 @@ socket.on('state_update', (data) => {
     renderWaypoints();
     updateMarkers();
     autoDownloaded = false;
-    fencePoints = [];
-    if (fenceGroup) fenceGroup.clearLayers();
-    window._reqFencePlan = false;
+
   }
   if (data.lat && data.lon && vehicleMarker) {
     vehicleMarker.setLatLng([data.lat, data.lon]);
@@ -49,10 +45,7 @@ socket.on('state_update', (data) => {
     socket.emit('request_mission');
     autoDownloaded = true;
   }
-  if (!window._reqFencePlan && data.connected) {
-    window._reqFencePlan = true;
-    socket.emit('request_fence');
-  }
+
 });
 socket.on('mission_data', (data) => {
   waypoints = data.waypoints || [];
@@ -65,10 +58,6 @@ socket.on('mission_upload_complete', (data) => {
     data.success ? `Upload complete — ${data.result}` : `Upload failed — ${data.result}`;
 });
 
-socket.on('fence_data', (data) => {
-  fencePoints = (data.points || []).map(function(p) { return { lat: p[0], lon: p[1] }; });
-  drawFenceOverlay();
-});
 
 // --- Map ---
 function initMap(lat, lon) {
@@ -89,8 +78,6 @@ function initMap(lat, lon) {
     }), zIndexOffset: 1000,
   }).addTo(map);
 
-  fenceGroup = L.layerGroup().addTo(map);
-
   var gridLayer = addGrid(map);
 
   L.control.layers({
@@ -100,7 +87,6 @@ function initMap(lat, lon) {
     'Dark': dark,
   }, {
     'Grid': gridLayer,
-    'Fence': fenceGroup,
   }, { position: 'topright' }).addTo(map);
 
   map.on('click', (e) => {
@@ -308,28 +294,6 @@ function reverseMission() {
   document.getElementById('planStatus').textContent = 'Mission reversed.';
 }
 
-function drawFenceOverlay() {
-  if (!fenceGroup) return;
-  fenceGroup.clearLayers();
-  if (fencePoints.length < 2) return;
-  var latlngs = fencePoints.map(function(p) { return [p.lat, p.lon]; });
-  if (fencePoints.length >= 3) {
-    fenceGroup.addLayer(L.polygon(latlngs, {
-      color: '#eab308', weight: 2, fillColor: '#eab308', fillOpacity: 0.12,
-      interactive: false,
-    }));
-  } else {
-    fenceGroup.addLayer(L.polyline(latlngs, {
-      color: '#eab308', weight: 2, dashArray: '6,4', interactive: false,
-    }));
-  }
-  fencePoints.forEach(function(p) {
-    fenceGroup.addLayer(L.circleMarker([p.lat, p.lon], {
-      radius: 4, color: '#eab308', fillColor: '#eab308', fillOpacity: 1,
-      weight: 2, interactive: false,
-    }));
-  });
-}
 
 function setAllAltitudes() {
   if (waypoints.length === 0) { alert('No waypoints to adjust.'); return; }
@@ -440,3 +404,5 @@ document.getElementById('missionFileInput').onchange = function(e) {
   reader.readAsText(file);
   e.target.value = '';
 };
+
+

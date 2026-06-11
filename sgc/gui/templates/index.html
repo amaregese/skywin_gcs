@@ -26,6 +26,7 @@
       <div class="menu-item"><span>Flight Plan</span>
         <div class="menu-dropdown">
           <div onclick="location.href='/plan'">Mission Planner</div>
+          <div onclick="location.href='/survey'">Auto WP &rarr; Grid</div>
           <div onclick="location.href='/fence'">Geo-Fence Editor</div>
           <div onclick="location.href='/rally'">Rally Points</div>
         </div>
@@ -58,10 +59,6 @@
       <div class="menu-title">SGC - Skywin Ground Control Station</div>
     </nav>
 
-    <div id="prearmBanner" class="prearm-banner hidden" onclick="this.classList.add('hidden')">
-      <span id="prearmText"></span>
-      <span style="float:right;cursor:pointer;padding:0 8px">&times;</span>
-    </div>
 
     <div id="toolbar">
       <div id="tbHamburger" onclick="toggleToolbarMenu()">
@@ -82,9 +79,7 @@
         <span class="tb-brand-name">SGC</span>
         <span class="tb-brand-ver">V1.0.2</span>
       </div>
-      <div class="tb-sep"></div>
-      <div id="waterfallWrap" class="disconnected"><canvas id="waterfallCanvas"></canvas></div>
-      <button id="connectBtn" class="tb-btn tb-connect" onclick="connectVehicle()">&#x25CF; Connect</button>
+      <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
       <div class="tb-group">
         <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; LOG</button>
         <button id="measureBtn" class="tb-btn" onclick="toggleMeasure()">&#x1F4D0; Measure</button>
@@ -110,6 +105,25 @@
         <div class="sidebar-btn" data-tab="inspector" onclick="switchSidebarTab('inspector')" title="Inspector">
           <span class="sidebar-btn-icon">&#x1F50D;</span>
           <span class="sidebar-btn-label">LOG</span>
+        </div>
+        <div class="sidebar-sep"></div>
+        <div class="sidebar-btn" data-tab="health" onclick="switchSidebarTab('health')" title="Health">
+          <span class="sidebar-btn-icon">&#x2665;</span>
+          <span class="sidebar-btn-label">HEALTH</span>
+        </div>
+        <div class="sidebar-btn" data-tab="stats" onclick="switchSidebarTab('stats')" title="Stats">
+          <span class="sidebar-btn-icon">&#x2261;</span>
+          <span class="sidebar-btn-label">STATS</span>
+        </div>
+        <div class="sidebar-sep"></div>
+        <div class="sidebar-btn" data-tab="targets" onclick="switchSidebarTab('targets')" title="Targets">
+          <span class="sidebar-btn-icon">&#x1F3AF;</span>
+          <span class="sidebar-btn-label">TARGET</span>
+        </div>
+        <div class="sidebar-sep"></div>
+        <div class="sidebar-btn" data-tab="camera" onclick="switchSidebarTab('camera')" title="Camera">
+          <span class="sidebar-btn-icon">&#x1F4F7;</span>
+          <span class="sidebar-btn-label">CAMERA</span>
         </div>
       </div>
 
@@ -183,6 +197,7 @@
               <span class="hud-unit">m</span>
             </div>
           </div>
+
         </div>
         <div id="measureInfo" class="measure-info hidden">
           <div class="measure-info-header">&#9751; Measuring</div>
@@ -411,84 +426,198 @@
             <div id="inspectorList"></div>
           </div>
         </div>
+
+        <div id="sideCardHealth" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('health')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x2665; Sensor Health</span>
+          </div>
+          <div class="side-card-body">
+            <div class="telemetry-group">
+              <div class="group-title">SENSOR HEALTH</div>
+              <div class="group-content">
+                <div id="sensorIndicators" class="sensor-grid">
+                  <div class="sensor-item" data-sensor="gyro"><span class="sensor-dot" id="s_gyro"></span><span>Gyro</span></div>
+                  <div class="sensor-item" data-sensor="accel"><span class="sensor-dot" id="s_accel"></span><span>Accel</span></div>
+                  <div class="sensor-item" data-sensor="mag"><span class="sensor-dot" id="s_mag"></span><span>Mag</span></div>
+                  <div class="sensor-item" data-sensor="gps"><span class="sensor-dot" id="s_gps_sens"></span><span>GPS</span></div>
+                  <div class="sensor-item" data-sensor="baro"><span class="sensor-dot" id="s_baro"></span><span>Baro</span></div>
+                  <div class="sensor-item" data-sensor="rc"><span class="sensor-dot" id="s_rc"></span><span>RC</span></div>
+                  <div class="sensor-item" data-sensor="ahrs"><span class="sensor-dot" id="s_ahrs"></span><span>AHRS</span></div>
+                  <div class="sensor-item" data-sensor="battery"><span class="sensor-dot" id="s_batt_sens"></span><span>Batt</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">EKF</div>
+              <div class="group-content">
+                <table class="ekf-table">
+                  <tr><td class="ekf-label">H-Pos</td><td class="ekf-label">V-Pos</td></tr>
+                  <tr><td class="ekf-val" id="ekf_hpos">---</td><td class="ekf-val" id="ekf_vpos">---</td></tr>
+                  <tr><td class="ekf-label">Vel</td><td class="ekf-label">Mag</td></tr>
+                  <tr><td class="ekf-val" id="ekf_vel">---</td><td class="ekf-val" id="ekf_mag">---</td></tr>
+                </table>
+                <div style="margin-top:4px;font-size:9px;color:#475569">Flags: <span id="ekf_flags">---</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="sideCardStats" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('stats')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x2261; Flight Stats</span>
+          </div>
+          <div class="side-card-body">
+            <div class="telemetry-group">
+              <div class="group-title">FLIGHT STATS</div>
+              <div class="group-content">
+                <table class="ekf-table">
+                  <tr><td class="ekf-label">Max Alt</td><td class="ekf-label">Max GS</td></tr>
+                  <tr><td class="ekf-val" id="fs_max_alt">---</td><td class="ekf-val" id="fs_max_gs">---</td></tr>
+                  <tr><td class="ekf-label">Max Dist</td><td class="ekf-label">Flight Time</td></tr>
+                  <tr><td class="ekf-val" id="fs_max_dist">---</td><td class="ekf-val" id="fs_flight_time">00:00</td></tr>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="sideCardTargets" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('targets')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x1F3AF; Target Points</span>
+          </div>
+          <div class="side-card-body">
+            <div class="telemetry-group">
+              <div class="group-title">ADD / EDIT TARGET</div>
+              <div class="group-content">
+                <div class="row">
+                  <span class="row-label">Lat</span>
+                  <input type="number" id="targetLat" class="wp-edit" style="width:100px" step="any" placeholder="37.7749">
+                </div>
+                <div class="row">
+                  <span class="row-label">Lon</span>
+                  <input type="number" id="targetLon" class="wp-edit" style="width:100px" step="any" placeholder="-122.4194">
+                </div>
+                <div class="row">
+                  <span class="row-label">Name</span>
+                  <input type="text" id="targetName" class="wp-edit" style="width:100px" placeholder="Target 1">
+                </div>
+                <div style="display:flex;gap:6px;margin-top:8px">
+                  <button id="targetSaveBtn" class="action-btn success" style="flex:1;font-size:11px;padding:6px" onclick="saveTarget()">+ ADD</button>
+                  <button id="targetCancelBtn" class="action-btn secondary hidden" style="font-size:11px;padding:6px" onclick="cancelEditTarget()">Cancel</button>
+                </div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">TARGET LIST</div>
+              <div class="group-content" id="targetListContainer"></div>
+            </div>
+          </div>
+        </div>
+        <div id="sideCardCamera" class="side-card hidden">
+          <div class="camera-resize-handle" id="cameraResizeHandle"></div>
+          <div class="side-card-header" onclick="switchSidebarTab('camera')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x1F4F7; Camera Feed</span>
+          </div>
+          <div class="side-card-body" style="padding:0;display:flex;flex-direction:column">
+            <div id="cameraFeed" class="camera-feed">
+              <div id="cameraPlaceholder" class="camera-placeholder">
+                <span class="camera-placeholder-icon">&#x1F4F7;</span>
+                <span class="camera-placeholder-text">No video source</span>
+                <span class="camera-placeholder-hint">Connect a network stream or local camera</span>
+              </div>
+              <img id="cameraImage" class="camera-image hidden" alt="Camera feed">
+              <video id="cameraVideo" class="camera-image hidden" autoplay playsinline muted></video>
+              <div id="cameraStatus" class="camera-status hidden">
+                <span class="camera-status-dot" id="cameraStatusDot"></span>
+                <span id="cameraStatusText">Connecting...</span>
+              </div>
+              <div id="cameraInfo" class="camera-info hidden">
+                <span id="cameraInfoRes">--</span>
+                <span class="camera-info-sep">|</span>
+                <span id="cameraInfoFps">-- fps</span>
+              </div>
+            </div>
+            <div class="camera-controls">
+              <div class="camera-source-row">
+                <span class="camera-source-label">Source:</span>
+                <button id="camSrcNetwork" class="camera-source-btn active" onclick="switchCameraSource('network')">Network</button>
+                <button id="camSrcLocal" class="camera-source-btn" onclick="switchCameraSource('local')">Local Camera</button>
+              </div>
+              <div id="cameraUrlRow" class="camera-input-row">
+                <input type="text" id="cameraUrl" class="camera-url-input" placeholder="Stream URL (e.g. http://192.168.1.100:8080/stream/video.mjpg)" value="http://192.168.1.100:8080/stream/video.mjpg">
+                <button id="cameraConnectBtn" class="camera-btn primary" onclick="toggleCameraStream()">Connect</button>
+              </div>
+              <div id="cameraDeviceRow" class="camera-input-row hidden">
+                <select id="cameraDeviceSelect" class="camera-device-select" onchange="cameraDeviceChanged()"></select>
+                <button id="cameraLocalBtn" class="camera-btn primary" onclick="toggleLocalCamera()">Start Camera</button>
+              </div>
+              <div class="camera-actions">
+                <button class="camera-btn" id="cameraSnapshotBtn" onclick="cameraSnapshot()" title="Take Snapshot">
+                  <span class="camera-btn-icon">&#x1F4F8;</span> Snapshot
+                </button>
+                <button class="camera-btn" onclick="cameraFullscreen()" title="Fullscreen">
+                  <span class="camera-btn-icon">&#x26F6;</span> Fullscreen
+                </button>
+                <button class="camera-btn" onclick="cameraSettings()" title="Settings">
+                  <span class="camera-btn-icon">&#x2699;</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="actionPanel">
-        <div id="actionTabs">
-          <span class="action-tab active" data-tab="control" onclick="switchActionTab('control')">CONTROL</span>
-          <span class="action-tab" data-tab="health" onclick="switchActionTab('health')">HEALTH</span>
-          <span class="action-tab" data-tab="stats" onclick="switchActionTab('stats')">STATS</span>
+        <div id="actionPanelHeader">
+          <span class="action-panel-title">CONTROL</span>
+          <button id="collapseActionBtn" class="action-collapse-btn" onclick="toggleActionPanel()" title="Collapse panel">&#9658;</button>
         </div>
-        <div id="controlPanel">
-          <div class="action-section">
-            <div class="action-title">FLIGHT MODE</div>
-            <select id="flightModeSelect">
-              <option>STABILIZE</option><option>ACRO</option><option>ALT_HOLD</option>
-              <option>AUTO</option><option selected>GUIDED</option><option>LOITER</option>
-              <option>RTL</option><option>CIRCLE</option><option>LAND</option>
-              <option>DRIFT</option><option>SPORT</option><option>FLIP</option>
-              <option>AUTOTUNE</option><option>POSHOLD</option><option>BRAKE</option>
-              <option>THROW</option><option>AVOID_ADSB</option><option>GUIDED_NOGPS</option>
-              <option>SMART_RTL</option><option>FLOWHOLD</option><option>FOLLOW</option>
-              <option>ZIGZAG</option><option>SYSTEM_ID</option><option>AUTOROTATE</option><option>AUTO_RTL</option>
-            </select>
-            <button class="action-btn" onclick="setMode()">SET MODE</button>
-          </div>
-          <div class="action-section">
-            <div class="action-title">VEHICLE CONTROL</div>
-            <div class="btn-row">
-              <button class="action-btn success" onclick="arm()">ARM</button>
-              <button class="action-btn danger" onclick="disarm()">DISARM</button>
+        <div id="actionPanelBody" style="display:flex;flex-direction:column;flex:1;min-height:0">
+          <div id="controlPanel">
+            <div class="action-section">
+              <div class="action-title">FLIGHT MODE</div>
+              <select id="flightModeSelect">
+                <option>STABILIZE</option><option>ACRO</option><option>ALT_HOLD</option>
+                <option>AUTO</option><option selected>GUIDED</option><option>LOITER</option>
+                <option>RTL</option><option>CIRCLE</option><option>LAND</option>
+                <option>DRIFT</option><option>SPORT</option><option>FLIP</option>
+                <option>AUTOTUNE</option><option>POSHOLD</option><option>BRAKE</option>
+                <option>THROW</option><option>AVOID_ADSB</option><option>GUIDED_NOGPS</option>
+                <option>SMART_RTL</option><option>FLOWHOLD</option><option>FOLLOW</option>
+                <option>ZIGZAG</option><option>SYSTEM_ID</option><option>AUTOROTATE</option><option>AUTO_RTL</option>
+              </select>
+              <button class="action-btn" onclick="setMode()">SET MODE</button>
             </div>
-            <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
-            <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
-            <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
-            <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
-          </div>
-        </div>
-        <div id="healthPanel" class="hidden">
-          <div class="action-section">
-            <div class="action-title">SENSOR HEALTH</div>
-            <div id="sensorIndicators" class="sensor-grid">
-              <div class="sensor-item" data-sensor="gyro"><span class="sensor-dot" id="s_gyro"></span><span>Gyro</span></div>
-              <div class="sensor-item" data-sensor="accel"><span class="sensor-dot" id="s_accel"></span><span>Accel</span></div>
-              <div class="sensor-item" data-sensor="mag"><span class="sensor-dot" id="s_mag"></span><span>Mag</span></div>
-              <div class="sensor-item" data-sensor="gps"><span class="sensor-dot" id="s_gps_sens"></span><span>GPS</span></div>
-              <div class="sensor-item" data-sensor="baro"><span class="sensor-dot" id="s_baro"></span><span>Baro</span></div>
-              <div class="sensor-item" data-sensor="rc"><span class="sensor-dot" id="s_rc"></span><span>RC</span></div>
-              <div class="sensor-item" data-sensor="ahrs"><span class="sensor-dot" id="s_ahrs"></span><span>AHRS</span></div>
-              <div class="sensor-item" data-sensor="battery"><span class="sensor-dot" id="s_batt_sens"></span><span>Batt</span></div>
-            </div>
-            <hr class="section-sep">
-            <div class="ekf-section" id="ekfSection">
-              <div class="action-title" style="font-size:10px;margin-top:2px">EKF</div>
-              <table class="ekf-table">
-                <tr><td class="ekf-label">H-Pos</td><td class="ekf-label">V-Pos</td></tr>
-                <tr><td class="ekf-val" id="ekf_hpos">---</td><td class="ekf-val" id="ekf_vpos">---</td></tr>
-                <tr><td class="ekf-label">Vel</td><td class="ekf-label">Mag</td></tr>
-                <tr><td class="ekf-val" id="ekf_vel">---</td><td class="ekf-val" id="ekf_mag">---</td></tr>
-              </table>
-              <div style="margin-top:1px;font-size:7px;color:#475569">Flags: <span id="ekf_flags">---</span></div>
+            <div class="action-section">
+              <div class="action-title">VEHICLE CONTROL</div>
+              <div class="btn-row">
+                <button class="action-btn success" onclick="arm()">ARM</button>
+                <button class="action-btn danger" onclick="disarm()">DISARM</button>
+              </div>
+              <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
+              <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
+              <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
+              <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
             </div>
           </div>
-        </div>
-        <div id="statsPanel" class="hidden">
-          <div class="action-section">
-            <div class="action-title">FLIGHT STATS</div>
-            <table class="ekf-table">
-              <tr><td class="ekf-label">Max Alt</td><td class="ekf-label">Max GS</td></tr>
-              <tr><td class="ekf-val" id="fs_max_alt">---</td><td class="ekf-val" id="fs_max_gs">---</td></tr>
-              <tr><td class="ekf-label">Max Dist</td><td class="ekf-label">Flight Time</td></tr>
-              <tr><td class="ekf-val" id="fs_max_dist">---</td><td class="ekf-val" id="fs_flight_time">00:00</td></tr>
-            </table>
+          <div id="targetDistPanel" class="action-section hidden">
+            <div class="action-title" style="display:flex;justify-content:space-between;align-items:center">
+              <span>DESTINATIONS</span>
+              <span id="targetDistCount" style="color:#7c3aed;font-size:10px">0</span>
+            </div>
+            <div id="targetDistList"></div>
           </div>
-        </div>
-        <div id="rightConsole">
-          <div class="rc-header">
-            <span>CONSOLE</span>
-            <button id="consoleExpandBtn" onclick="toggleConsoleSize()" title="Expand to bottom panel">&#9650;</button>
+          <div id="rightConsole" style="margin-top:auto">
+            <div class="rc-header">
+              <span>CONSOLE</span>
+              <button id="consoleExpandBtn" onclick="toggleConsoleSize()" title="Expand to bottom panel">&#9650;</button>
+            </div>
+            <div id="consoleOutput"></div>
           </div>
-          <div id="consoleOutput"></div>
         </div>
       </div>
     </div>
@@ -514,6 +643,95 @@
         <div class="cal-modal-footer">
           <button id="calAbortBtn" class="action-btn danger" onclick="abortCalibration()">Abort</button>
           <button id="calContinueBtn" class="action-btn success hidden" onclick="continueCalibration()">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="connDialog" class="conn-overlay hidden">
+      <div class="conn-box">
+        <div class="conn-header">
+          <span>&#x1F4E1; Connection</span>
+          <span class="conn-close" onclick="closeConnDialog()">&times;</span>
+        </div>
+        <div class="conn-body">
+          <div class="conn-row">
+            <label class="conn-label">Type</label>
+            <select id="connType" class="conn-select" onchange="onConnTypeChange()">
+              <option value="sitl">SITL (Simulation)</option>
+              <option value="serial">Serial (FCU / Radio)</option>
+              <option value="tcp">TCP Client</option>
+              <option value="tcpsrv">TCP Server</option>
+              <option value="udp">UDP</option>
+            </select>
+          </div>
+          <div id="connSerialFields" class="conn-fields hidden">
+            <div class="conn-row">
+              <label class="conn-label">Port</label>
+              <select id="connSerialPort" class="conn-select">
+                <option value="">-- Scan for ports --</option>
+              </select>
+              <button class="conn-scan-btn" onclick="scanSerialPorts()">Scan</button>
+            </div>
+            <div class="conn-row">
+              <label class="conn-label">Baud</label>
+              <select id="connBaudSerial" class="conn-select">
+                <option value="57600">57600</option>
+                <option value="115200">115200</option>
+                <option value="38400">38400</option>
+                <option value="19200">19200</option>
+                <option value="9600">9600</option>
+                <option value="921600">921600</option>
+              </select>
+            </div>
+          </div>
+          <div id="connTcpFields" class="conn-fields hidden">
+            <div class="conn-row">
+              <label class="conn-label">Address</label>
+              <input id="connTcpAddr" class="conn-input" type="text" value="127.0.0.1">
+            </div>
+            <div class="conn-row">
+              <label class="conn-label">Port</label>
+              <input id="connTcpPort" class="conn-input" type="number" value="5760">
+            </div>
+          </div>
+          <div id="connTcpSrvFields" class="conn-fields hidden">
+            <div class="conn-row">
+              <label class="conn-label">Listen Port</label>
+              <input id="connTcpSrvPort" class="conn-input" type="number" value="5760">
+            </div>
+          </div>
+          <div id="connUdpFields" class="conn-fields hidden">
+            <div class="conn-row">
+              <label class="conn-label">Mode</label>
+              <select id="connUdpMode" class="conn-select">
+                <option value="in">Receive (in)</option>
+                <option value="out">Send (out)</option>
+              </select>
+            </div>
+            <div class="conn-row">
+              <label class="conn-label">Port</label>
+              <input id="connUdpPort" class="conn-input" type="number" value="14550">
+            </div>
+            <div class="conn-row" id="connUdpAddrRow">
+              <label class="conn-label">Target Address</label>
+              <input id="connUdpAddr" class="conn-input" type="text" value="127.0.0.1">
+            </div>
+          </div>
+          <div id="connSitlFields" class="conn-fields">
+            <div class="conn-row">
+              <span style="color:#64748b;font-size:11px;line-height:1.4">
+                Connects to ArduPilot SITL via UDP telemetry stream.<br>
+                Make sure SITL is running before connecting.
+              </span>
+            </div>
+          </div>
+          <div id="connPreview" class="conn-preview">
+            Connection string: <code id="connStringPreview">tcp:127.0.0.1:5760</code>
+          </div>
+        </div>
+        <div class="conn-actions">
+          <button class="action-btn secondary" onclick="closeConnDialog()">Cancel</button>
+          <button class="action-btn success" onclick="doConnect()">Connect</button>
         </div>
       </div>
     </div>

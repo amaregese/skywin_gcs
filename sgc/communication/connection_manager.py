@@ -59,6 +59,7 @@ COMMAND_NAMES = {
     mavutil.mavlink.MAV_CMD_MISSION_START: "START_MISSION",
     mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION: "CALIBRATION",
     mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN: "REBOOT",
+    mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS: "ACCELCAL_VEHICLE_POS",
 }
 
 CMD_RESULTS = {0: "Accepted", 1: "Temp Reject", 2: "Denied", 3: "Unsupported",
@@ -126,6 +127,10 @@ class MAVLinkConnection:
         self._rally_count = 0
         self._rally_download_seq = None
 
+        # Calibration advance tracking (server-side, cache-independent)
+        self._cal_pending_advance = False
+        self._cal_advance_type = None
+
     def add_listener(self, callback):
         self.listeners.append(callback)
 
@@ -186,6 +191,18 @@ class MAVLinkConnection:
                 self._emit("log", {"message": "No heartbeat received (timeout)", "level": "error"})
                 return False
 
+            # Explicitly set target from heartbeat
+            src_sys = heartbeat.get_srcSystem()
+            src_comp = heartbeat.get_srcComponent()
+            self._emit("log", {"message": f"Heartbeat from sys={src_sys} comp={src_comp} type={getattr(heartbeat, 'type', '?')}", "level": "info"})
+            self.master.target_system = src_sys
+            # Force target_component to MAV_COMP_ID_AUTOPILOT1 (1) if the
+            # heartbeat reports MAV_COMP_ID_ALL (0), since commands addressed
+            # to component 0 may not be routed to the autopilot properly
+            if src_comp == 0:
+                self.master.target_component = 1
+            else:
+                self.master.target_component = src_comp
             self.state["sysid"] = self.master.target_system
             self.state["compid"] = self.master.target_component
             self.state["connected"] = True
@@ -374,10 +391,12 @@ class MAVLinkConnection:
                 is_disconnect = (
                     (isinstance(e, OSError) and e.errno == 6) or
                     "Device not configured" in err_str or
-                    "device disconnected" in err_str.lower()
+                    "device disconnected" in err_str.lower() or
+                    "ClearCommError" in err_str or
+                    (isinstance(e, PermissionError) and e.errno == 13)
                 )
                 if is_disconnect:
-                    self._emit("log", {"message": "Device disconnected (USB unplugged)", "level": "warning"})
+                    self._emit("log", {"message": "Device disconnected (USB unplugged/reboot)", "level": "warning"})
                     self.running = False
                     break
                 if self.running:
@@ -484,13 +503,50 @@ class MAVLinkConnection:
 
         elif msg_type == "STATUSTEXT":
             severity = STATUSTEXT_SEVERITY.get(getattr(msg, 'severity', 6), "info")
-            self._emit("log", {"message": f"{getattr(msg, 'text', '')}", "level": severity})
+            text = getattr(msg, 'text', '')
+            # Log all FCU messages transparently for calibration debugging
+            if self._cal_pending_advance and text.strip():
+                self._emit("log", {"message": f"[FCU] {text}", "level": severity})
+            else:
+                self._emit("log", {"message": f"{text}", "level": severity})
+
+        elif msg_type == "MAG_CAL_PROGRESS":
+            self._emit("mag_cal_progress", {
+                "compass_id": getattr(msg, 'compass_id', 0),
+                "cal_mask": getattr(msg, 'cal_mask', 0),
+                "completion_pct": getattr(msg, 'completion_pct', 0),
+                "direction_x": getattr(msg, 'direction_x', 0),
+                "direction_y": getattr(msg, 'direction_y', 0),
+                "direction_z": getattr(msg, 'direction_z', 0),
+            })
+
+        elif msg_type == "MAG_CAL_REPORT":
+            status_map = {0: "NEW", 1: "ONGOING", 2: "IN_PROGRESS", 3: "FAILED",
+                          4: "COMPLETED", 5: "BAD_ORIENTATION", 6: "BAD_RADIUS"}
+            cal_status = getattr(msg, 'cal_status', 0)
+            self._emit("mag_cal_report", {
+                "compass_id": getattr(msg, 'compass_id', 0),
+                "cal_status": cal_status,
+                "status_text": status_map.get(cal_status, f"UNKNOWN_{cal_status}"),
+                "autosaved": getattr(msg, 'autosaved', 0),
+                "confidence": round(getattr(msg, 'confidence', 0), 1),
+                "ofs_x": round(getattr(msg, 'ofs_x', 0), 1),
+                "ofs_y": round(getattr(msg, 'ofs_y', 0), 1),
+                "ofs_z": round(getattr(msg, 'ofs_z', 0), 1),
+            })
+            if cal_status in (3, 4, 5, 6):
+                self._emit("log", {"message": f"Mag cal compass#{getattr(msg, 'compass_id', 0)}: {status_map.get(cal_status, 'UNKNOWN')} (confidence={getattr(msg, 'confidence', 0):.1f})", "level": "success" if cal_status == 4 else "error"})
 
         elif msg_type == "COMMAND_ACK":
             cmd_name = COMMAND_NAMES.get(getattr(msg, 'command', 0), f"CMD_{getattr(msg, 'command', 0)}")
-            result = CMD_RESULTS.get(getattr(msg, 'result', 0), f"Code {getattr(msg, 'result', 0)}")
-            level = "success" if getattr(msg, 'result', 0) == 0 else "error"
-            self._emit("log", {"message": f"Got COMMAND_ACK: {cmd_name}: {result}", "level": level})
+            result_code = getattr(msg, 'result', 0)
+            result = CMD_RESULTS.get(result_code, f"Code {result_code}")
+            level = "success" if result_code == 0 else "error"
+            msg_text = f"Got COMMAND_ACK: {cmd_name}: {result}"
+            # Provide helpful tips for calibration commands
+            if cmd_name == "CALIBRATION" and result_code == 3:
+                msg_text += " - Check that compass(s) are enabled (COMPASS_ENABLE=1) and the firmware supports onboard calibration (ArduPilot 4.0+)"
+            self._emit("log", {"message": msg_text, "level": level})
 
         elif msg_type == "PARAM_VALUE":
             name = getattr(msg, 'param_id', '').rstrip("\x00")
@@ -707,17 +763,38 @@ class MAVLinkConnection:
         return f"Mode {custom_mode}"
 
     def send_command(self, command_id, param1=0, param2=0, param3=0,
-                     param4=0, param5=0, param6=0, param7=0):
+                     param4=0, param5=0, param6=0, param7=0, confirmation=0,
+                     use_command_int=False):
         if not self.master or not self.running:
             return False
+        # Debug: log raw command details
+        cmd_name = COMMAND_NAMES.get(command_id, f"CMD_{command_id}")
+        if command_id == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
+            self._emit("log", {"message": f"[RAW] sending {cmd_name} conf={confirmation} p5={param5} to sys={self.master.target_system} comp={self.master.target_component}", "level": "info"})
+        elif command_id == mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS:
+            self._emit("log", {"message": f"[RAW] sending {cmd_name} param1={param1} (position) to sys={self.master.target_system} comp={self.master.target_component} as {'COMMAND_INT' if use_command_int else 'COMMAND_LONG'}", "level": "info"})
         try:
-            self.master.mav.command_long_send(
-                self.master.target_system,
-                self.master.target_component,
-                command_id, 0,
-                param1, param2, param3, param4,
-                param5, param6, param7,
-            )
+            if use_command_int:
+                # Use COMMAND_INT for commands handled only in handle_command_int_packet
+                # NOTE: x,y are int32, z is float (unlike COMMAND_LONG's float param5-7)
+                self.master.mav.command_int_send(
+                    self.master.target_system,
+                    self.master.target_component,
+                    mavutil.mavlink.MAV_FRAME_GLOBAL,
+                    command_id,
+                    0,  # current
+                    0,  # autocontinue
+                    param1, param2, param3, param4,
+                    int(param5), int(param6), float(param7),
+                )
+            else:
+                self.master.mav.command_long_send(
+                    self.master.target_system,
+                    self.master.target_component,
+                    command_id, confirmation,
+                    param1, param2, param3, param4,
+                    param5, param6, param7,
+                )
             if hasattr(self.master, 'flush'):
                 self.master.flush()
             return True
@@ -764,22 +841,59 @@ class MAVLinkConnection:
             0,  # action on next reboots
         )
 
-    def calibrate(self, cal_type):
+    def calibrate(self, cal_type, confirm=False, position=0):
         params = {
             'gyro':       (1, 0, 0, 0, 0, 0, 0),
             'mag':        (0, 1, 0, 0, 0, 0, 0),
             'pressure':   (0, 0, 1, 0, 0, 0, 0),
             'radio':      (0, 0, 0, 1, 0, 0, 0),
             'accel':      (0, 0, 0, 0, 1, 0, 0),
+            'accel_simple': (0, 0, 0, 0, 2, 0, 0),
             'compass_mot':(0, 0, 0, 0, 0, 1, 0),
             'level':      (0, 0, 0, 0, 0, 0, 1),
         }
+        if cal_type == 'cancel':
+            self._cal_pending_advance = False
+            self._cal_advance_type = None
+            return self.cancel_calibration()
         p = params.get(cal_type)
         if not p:
             self._emit("log", {"message": f"Unknown calibration type: {cal_type}", "level": "error"})
             return False
-        self._emit("log", {"message": f"Starting {cal_type} calibration...", "level": "info"})
+        # Server-side tracking for accel calibration advance.
+        # The first call (from startCalibration) sends confirm=False (start).
+        # Subsequent calls (from continueCalibration) should use the
+        # MAV_CMD_ACCELCAL_VEHICLE_POS command for advance on newer ArduPilot.
+        cal_reset = cal_type in ('accel', 'accel_simple') and self._cal_advance_type != cal_type
+        if cal_reset:
+            self._cal_pending_advance = False
+            self._cal_advance_type = None
+        if self._cal_pending_advance and cal_type in ('accel', 'accel_simple'):
+            confirm = True
+        elif cal_type in ('accel', 'accel_simple'):
+            self._cal_pending_advance = True
+            self._cal_advance_type = cal_type
+
+        if confirm and cal_type == 'accel':
+            # MAV_CMD_ACCELCAL_VEHICLE_POS not supported on this FCU (returned FAILED).
+            # Fallback to MAV_CMD_PREFLIGHT_CALIBRATION with all-zero params + confirmation=1
+            # (MAVProxy style). Key difference from our earlier attempt: param5=0 (not 1),
+            # so the FCU checks confirmation>0 instead of matching param5==1 start path first.
+            self._emit("log", {"message": f"Sending advance for accel cal position {position} via PREFLIGHT_CALIBRATION conf=1 (MAVProxy style)...", "level": "info"})
+            return self.send_command(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, confirmation=1)
+        elif confirm and cal_type == 'accel_simple':
+            # Simple accel doesn't use position-based advance; use old confirmation method
+            self._emit("log", {"message": "Sending advance for simple accel calibration (confirm=1)...", "level": "info"})
+            return self.send_command(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, *p, confirmation=1)
+
+        # Start command
+        label = "advance" if confirm else "start"
+        self._emit("log", {"message": f"Sending {label} command for {cal_type} calibration...", "level": "info"})
         return self.send_command(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, *p)
+
+    def cancel_calibration(self):
+        self._emit("log", {"message": "Cancelling calibration...", "level": "warning"})
+        return self.send_command(mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, 0, 0, 0, 0, 0, 0, 0)
 
     def request_params(self, callback=None):
         if not self.master or not self.running:

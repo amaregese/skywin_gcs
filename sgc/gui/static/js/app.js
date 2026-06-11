@@ -14,27 +14,143 @@ let missionWpGroup = null;
 let fenceGroup = null;
 const TRAIL_MAX = 500;
 const TRAIL_SEGMENTS = 10;
+let targetPoints = [];
+let targetGroup = null;
+var _logsRequested = false;
 
 socket.on('connect', () => {
-  socket.emit('request_logs');
+  if (!_logsRequested) {
+    _logsRequested = true;
+    socket.emit('request_logs');
+  }
 });
 
-function connectVehicle() {
-  socket.emit('connect_request', { connection: 'udpin:0.0.0.0:14550', baud: 57600 });
-  var btn = document.getElementById('connectBtn');
-  if (btn) { btn.textContent = '\u25CF Connecting...'; btn.disabled = true; btn.style.opacity = '0.5'; }
+function buildConnString() {
+  var type = document.getElementById('connType').value;
+  if (type === 'sitl') {
+    return { conn: 'udpin:0.0.0.0:14550', baud: 57600 };
+  } else if (type === 'serial') {
+    var port = document.getElementById('connSerialPort').value;
+    var baud = document.getElementById('connBaudSerial').value;
+    if (!port) return { conn: '', baud: 0 };
+    return { conn: port, baud: parseInt(baud) };
+  } else if (type === 'tcp') {
+    var a = document.getElementById('connTcpAddr').value || '127.0.0.1';
+    var p = document.getElementById('connTcpPort').value || '5760';
+    return { conn: 'tcpout:' + a + ':' + p, baud: 57600 };
+  } else if (type === 'tcpsrv') {
+    var p = document.getElementById('connTcpSrvPort').value || '5760';
+    return { conn: 'tcpin:0.0.0.0:' + p, baud: 57600 };
+  } else if (type === 'udp') {
+    var mode = document.getElementById('connUdpMode').value;
+    var port = document.getElementById('connUdpPort').value || '14550';
+    if (mode === 'in') {
+      return { conn: 'udpin:0.0.0.0:' + port, baud: 57600 };
+    } else {
+      var a = document.getElementById('connUdpAddr').value || '127.0.0.1';
+      return { conn: 'udpout:' + a + ':' + port, baud: 57600 };
+    }
+  }
+  return { conn: 'udpin:0.0.0.0:14550', baud: 57600 };
 }
 
+function onConnTypeChange() {
+  var type = document.getElementById('connType').value;
+  document.getElementById('connSitlFields').classList.toggle('hidden', type !== 'sitl');
+  document.getElementById('connSerialFields').classList.toggle('hidden', type !== 'serial');
+  document.getElementById('connTcpFields').classList.toggle('hidden', type !== 'tcp');
+  document.getElementById('connTcpSrvFields').classList.toggle('hidden', type !== 'tcpsrv');
+  document.getElementById('connUdpFields').classList.toggle('hidden', type !== 'udp');
+  updateConnPreview();
+}
+
+function updateConnPreview() {
+  var r = buildConnString();
+  var el = document.getElementById('connStringPreview');
+  if (el) el.textContent = r.conn + ' @ ' + r.baud + ' baud';
+}
+
+function scanSerialPorts() {
+  var sel = document.getElementById('connSerialPort');
+  sel.innerHTML = '<option value="">Scanning...</option>';
+  fetch('/api/ports').then(function(r) { return r.json(); }).then(function(ports) {
+    sel.innerHTML = '';
+    if (!ports || ports.length === 0) {
+      sel.innerHTML = '<option value="">No ports found</option>';
+      return;
+    }
+    ports.forEach(function(p) {
+      var opt = document.createElement('option');
+      opt.value = p.device;
+      opt.textContent = p.device + ' (' + (p.description || 'Unknown') + ')';
+      sel.appendChild(opt);
+    });
+  }).catch(function() {
+    sel.innerHTML = '<option value="">Scan failed</option>';
+  });
+}
+
+function toggleConnection() {
+  var btn = document.getElementById('connectBtn');
+  if (window.vehicle && window.vehicle.connected) {
+    btn.textContent = '\u25CF Disconnecting...';
+    btn.disabled = true;
+    socket.emit('disconnect_request');
+  } else {
+    showConnDialog();
+  }
+}
+
+function showConnDialog() {
+  document.getElementById('connDialog').classList.remove('hidden');
+  var udpMode = document.getElementById('connUdpMode');
+  if (udpMode) {
+    var row = document.getElementById('connUdpAddrRow');
+    if (row) row.style.display = udpMode.value === 'out' ? 'flex' : 'none';
+  }
+  updateConnPreview();
+  onConnTypeChange();
+  scanSerialPorts();
+}
+
+function closeConnDialog() {
+  document.getElementById('connDialog').classList.add('hidden');
+}
+
+function doConnect() {
+  var r = buildConnString();
+  if (!r.conn) {
+    log('Please select a connection port/address', 'error');
+    return;
+  }
+  closeConnDialog();
+  var btn = document.getElementById('connectBtn');
+  if (btn) { btn.textContent = '\u25CF Connecting...'; btn.disabled = true; btn.style.opacity = '0.5'; }
+  socket.emit('connect_request', { connection: r.conn, baud: r.baud });
+}
+
+// Set up connection dialog listeners
+function initConnDialog() {
+  var inputs = document.querySelectorAll('#connDialog input, #connDialog select');
+  inputs.forEach(function(el) {
+    el.addEventListener('change', updateConnPreview);
+    el.addEventListener('input', updateConnPreview);
+  });
+  var udpMode = document.getElementById('connUdpMode');
+  if (udpMode) {
+    udpMode.addEventListener('change', function() {
+      var row = document.getElementById('connUdpAddrRow');
+      if (row) row.style.display = this.value === 'out' ? 'flex' : 'none';
+      updateConnPreview();
+    });
+  }
+}
+document.addEventListener('DOMContentLoaded', initConnDialog);
+
 socket.on('state_update', (data) => {
-  vehicle = data;
-  updateWaterfall(data);
+  vehicle = data; window.vehicle = data;
   updateTelemetry(data);
 
-  var wf = document.getElementById('waterfallWrap');
-  if (wf) {
-    wf.classList.toggle('connected', !!data.connected);
-    wf.classList.toggle('disconnected', !data.connected);
-  }
   var btn = document.getElementById('connectBtn');
   if (btn) {
     if (data.connected) {
@@ -58,6 +174,7 @@ socket.on('state_update', (data) => {
   checkNotifications(data);
   updateHud(data);
   updateMissionPanel(data);
+  updateTargetDistPanel(data);
   if (data.connected) {
     if (!window._reqMission) {
       window._reqMission = true;
@@ -82,16 +199,10 @@ socket.on('log', (data) => {
   log(data.message, data.level);
   var msg = (data.message || '').toLowerCase();
   if (msg.includes('prearm') || msg.includes('pre-arm') || msg.includes('check failed') || (data.level === 'error' && msg.includes('arming'))) {
-    var banner = document.getElementById('prearmBanner');
-    var text = document.getElementById('prearmText');
-    if (banner && text) {
-      text.textContent = data.message;
-      banner.classList.remove('hidden');
-      clearTimeout(banner._timer);
-      banner._timer = setTimeout(function() { banner.classList.add('hidden'); }, 15000);
-    }
+    notify(data.message, 'danger');
   }
-  if (_calActive && !msg.includes('got command_ack') && (msg.includes('place') || msg.includes('rotate') || msg.includes('calibration') || msg.includes('progress') || msg.includes('orient') || msg.includes('finished') || msg.includes('complete') || msg.includes('continue') || msg.includes('success') || msg.includes('failed') || msg.includes('rejected'))) {
+  // Don't let our own server log messages trigger calibration UI
+  if (_calActive && !msg.includes('got command_ack') && !msg.startsWith('sending') && !msg.startsWith('starting') && (msg.includes('place') || msg.includes('rotate') || msg.includes('calibration') || msg.includes('progress') || msg.includes('orient') || msg.includes('finished') || msg.includes('complete') || msg.includes('continue') || msg.includes('success') || msg.includes('failed') || msg.includes('rejected') || msg.includes('trim ok') || msg.includes('trim:'))) {
     updateCalibration(data.message);
   }
 });
@@ -177,11 +288,24 @@ function armTakeoff() {
 // --- Calibration ---
 var _calActive = false;
 var _calType = '';
+var _calMagCompasses = {};
+var _calMagFinished = {};
+var _accelPos = -1;
+
+var ACCEL_POSITIONS = [
+  { name: 'Level', desc: 'Place vehicle level (upright)', short: 'LEVEL' },
+  { name: 'Right Side', desc: 'Place on its RIGHT side', short: 'RIGHT' },
+  { name: 'Left Side', desc: 'Place on its LEFT side', short: 'LEFT' },
+  { name: 'Nose Down', desc: 'Point nose DOWN', short: 'DOWN' },
+  { name: 'Nose Up', desc: 'Point nose UP', short: 'UP' },
+  { name: 'On Back', desc: 'Place on its BACK', short: 'BACK' },
+];
 
 var CAL_PROGRESS = {
   gyro: { steps: 1, label: 'Gyroscope' },
   accel: { steps: 6, label: 'Accelerometer' },
   mag: { steps: 1, label: 'Compass' },
+  accel_simple: { steps: 1, label: 'Simple Accel' },
   level: { steps: 1, label: 'Level Horizon' },
   radio: { steps: 1, label: 'Radio' },
   pressure: { steps: 1, label: 'Pressure' },
@@ -190,6 +314,9 @@ var CAL_PROGRESS = {
 function startCalibration(type) {
   _calActive = true;
   _calType = type;
+  _calMagCompasses = {};
+  _calMagFinished = {};
+  _accelPos = -1;
 
   var label = CAL_PROGRESS[type] ? CAL_PROGRESS[type].label : type;
   document.getElementById('calTitle').textContent = label + ' Calibration';
@@ -197,45 +324,282 @@ function startCalibration(type) {
   document.getElementById('calStatus').textContent = '';
   document.getElementById('calProgressBar').style.width = '0%';
   document.getElementById('calContinueBtn').classList.add('hidden');
+  document.getElementById('calMagCompasses').classList.add('hidden');
+  document.getElementById('calResult').classList.add('hidden');
+  clearCalWaitingTimer();
+  document.getElementById('calAbortBtn').textContent = 'Abort';
+  document.getElementById('calAbortBtn').disabled = false;
   document.getElementById('calModal').classList.remove('hidden');
+
+  if (type === 'mag') {
+    document.getElementById('calMagBars').innerHTML = '';
+    document.getElementById('calMagCompasses').classList.remove('hidden');
+    document.getElementById('calInstruction').textContent = 'Hold the vehicle and rotate it so each side points down toward the earth. Perform full 360-degree turns with each direction facing down.';
+  }
+
+  if (type === 'accel') {
+    document.getElementById('calInstruction').innerHTML = 'Full 3-axis accelerometer calibration<br><span style="font-size:11px;color:#94a3b8">Place vehicle in each position when prompted and click Continue.</span>';
+  }
+
+  if (type === 'accel_simple') {
+    document.getElementById('calInstruction').innerHTML = 'Simple accelerometer calibration<br><span style="font-size:11px;color:#94a3b8">Keep vehicle level and still. Only one position needed.</span>';
+  }
 
   socket.emit('calibrate', { type: type });
 }
 
+var _calWaitingTimer = null;
+
+function clearCalWaitingTimer() {
+  if (_calWaitingTimer) { clearTimeout(_calWaitingTimer); _calWaitingTimer = null; }
+}
+
 function continueCalibration() {
   if (!_calActive) return;
-  document.getElementById('calInstruction').textContent = 'Waiting for next step...';
-  document.getElementById('calStatus').textContent = 'Position confirmed, communicating with FCU...';
+  clearCalWaitingTimer();
+  var isAccel = _calType === 'accel' || _calType === 'accel_simple';
+  if (isAccel) {
+    document.getElementById('calInstruction').innerHTML = '<span style="color:#e2e8f0">Position confirmed</span><br><span style="font-size:11px;color:#94a3b8">Communicating with FCU, collecting samples... keep vehicle still</span>';
+    document.getElementById('calStatus').textContent = 'Waiting for FCU...';
+    // Show a "still waiting" message after 5 seconds
+    _calWaitingTimer = setTimeout(function() {
+      if (_calActive) {
+        document.getElementById('calStatus').textContent = 'Still waiting for FCU — the calibration may take 10-30 seconds per position. Keep the vehicle still.';
+      }
+    }, 5000);
+  } else {
+    document.getElementById('calInstruction').textContent = 'Waiting for next step...';
+    document.getElementById('calStatus').textContent = 'Position confirmed, communicating with FCU...';
+  }
   document.getElementById('calContinueBtn').classList.add('hidden');
-  socket.emit('calibrate', { type: _calType });
+  // Accel advance: send position index so backend uses MAV_CMD_ACCELCAL_VEHICLE_POS
+  var calData = { type: _calType, confirm: isAccel };
+  if (_calType === 'accel') {
+    calData.position = _accelPos;
+  }
+  socket.emit('calibrate', calData);
 }
 
 function abortCalibration() {
+  if (_calActive && _calType === 'mag') {
+    socket.emit('calibrate', { type: 'cancel' });
+  }
   _calActive = false;
   _calType = '';
+  _calMagCompasses = {};
+  _calMagFinished = {};
+  _accelPos = -1;
+  clearCalWaitingTimer();
+  document.getElementById('calModal').classList.add('hidden');
+}
+
+function rebootFcu() {
+  socket.emit('reboot_fcu');
+  notify('Reboot command sent, reconnecting...', 'info');
+}
+
+function enableCompassLearn() {
+  socket.emit('param_set', { name: 'COMPASS_LEARN', value: 2 });
+  notify('COMPASS_LEARN set to 2 (auto-learn). Reboot recommended.', 'info');
+}
+
+function rebootAfterCal() {
+  rebootFcu();
+  _calActive = false;
+  _calType = '';
+  _calMagFinished = {};
+  clearCalWaitingTimer();
   document.getElementById('calModal').classList.add('hidden');
 }
 
 function updateCalibration(msg) {
   if (!_calActive) return;
+  clearCalWaitingTimer();
   document.getElementById('calInstruction').textContent = msg;
   document.getElementById('calStatus').textContent = msg;
 
   var lower = msg.toLowerCase();
-  var finished = lower.includes('finished') || lower.includes('complete') || lower.includes('success') || lower.includes('passed');
+  var finished = lower.includes('finished') || lower.includes('complete') || lower.includes('success') || lower.includes('passed') || lower.includes('trim ok') || lower.includes('trim:');
 
-  var needsContinue = _calType === 'accel' && !finished && (lower.includes('place') || lower.includes('orient') || lower.includes('position') || lower.includes('level'));
+  var isAccel = _calType === 'accel';
+  var needsContinue = isAccel && !finished && (lower.includes('place') || lower.includes('orient') || lower.includes('position') || lower.includes('level') || lower.includes('press any key'));
   document.getElementById('calContinueBtn').classList.toggle('hidden', !needsContinue);
 
-  if (finished || lower.includes('failed') || lower.includes('rejected')) {
+  // Track accel position
+  if (isAccel && needsContinue) {
+    _accelPos++;
+    if (_accelPos < ACCEL_POSITIONS.length) {
+      var pos = ACCEL_POSITIONS[_accelPos];
+      var pct = Math.round((_accelPos / ACCEL_POSITIONS.length) * 100);
+      document.getElementById('calProgressBar').style.width = pct + '%';
+      document.getElementById('calInstruction').innerHTML =
+        '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Position ' + (_accelPos + 1) + ' of ' + ACCEL_POSITIONS.length + '</div>' +
+        '<span style="font-weight:700;color:#e2e8f0">' + pos.name + '</span><br>' +
+        '<span style="font-size:12px;color:#cbd5e1">' + pos.desc + '</span><br>' +
+        '<span style="font-size:10px;color:#64748b">Keep vehicle still and click Continue</span>';
+    }
+  }
+
+  if (finished) {
     document.getElementById('calProgressBar').style.width = '100%';
-    setTimeout(function() {
-      _calActive = false;
-      _calType = '';
-      document.getElementById('calModal').classList.add('hidden');
-    }, 2500);
+    document.getElementById('calInstruction').innerHTML = '<span style="font-weight:700;color:#22c55e">Calibration successful!</span>';
+    document.getElementById('calStatus').textContent = '';
+    if (_calType !== 'mag') {
+      setTimeout(function() {
+        _calActive = false;
+        _calType = '';
+        document.getElementById('calModal').classList.add('hidden');
+      }, 2500);
+    }
+  }
+
+  if (lower.includes('failed') || lower.includes('rejected')) {
+    document.getElementById('calProgressBar').style.width = '100%';
+    document.getElementById('calInstruction').innerHTML = '<span style="font-weight:700;color:#ef4444">Calibration failed</span>';
+    if (_calType !== 'mag') {
+      setTimeout(function() {
+        _calActive = false;
+        _calType = '';
+        document.getElementById('calModal').classList.add('hidden');
+      }, 3000);
+    }
   }
 }
+
+socket.on('mag_cal_progress', function(data) {
+  if (!_calActive || _calType !== 'mag') return;
+  var activeId = data.compass_id;
+  var calMask = data.cal_mask || 0;
+  var pct = Math.round((data.completion_pct || 0) * 100 / 255);
+
+  // Ensure all compasses in the mask have a progress bar
+  for (var i = 0; i < 4; i++) {
+    if (calMask & (1 << i)) {
+      if (!_calMagCompasses[i]) {
+        _calMagCompasses[i] = true;
+        _calMagFinished[i] = false;
+        renderMagCompassBar(i);
+      }
+    }
+  }
+
+  // Update the actively calibrating compass
+  updateMagCompassBar(activeId, pct);
+  // Overall progress: average of all active compass progress
+  var totalPct = 0; var count = 0;
+  for (var j = 0; j < 4; j++) {
+    if (_calMagCompasses[j] && !_calMagFinished[j]) {
+      var fill = document.getElementById('cal_mag_fill_' + j);
+      if (fill) {
+        var w = parseFloat(fill.style.width) || 0;
+        totalPct += w; count++;
+      }
+    }
+  }
+  document.getElementById('calProgressBar').style.width = (count ? Math.round(totalPct / count) : 0) + '%';
+});
+
+function renderMagCompassBar(id) {
+  var container = document.getElementById('calMagBars');
+  var row = document.createElement('div');
+  row.className = 'cal-mag-row';
+  row.id = 'cal_mag_row_' + id;
+  row.innerHTML =
+    '<span class="cal-mag-label">Compass #' + id + '</span>' +
+    '<div class="cal-mag-track">' +
+      '<div id="cal_mag_fill_' + id + '" class="cal-mag-fill active" style="width:0%"></div>' +
+    '</div>' +
+    '<span id="cal_mag_pct_' + id + '" class="cal-mag-pct">0%</span>';
+  container.appendChild(row);
+}
+
+function updateMagCompassBar(id, pct) {
+  var fill = document.getElementById('cal_mag_fill_' + id);
+  var pctEl = document.getElementById('cal_mag_pct_' + id);
+  if (!fill || !pctEl) return;
+  if (!_calMagFinished[id]) {
+    fill.style.width = Math.min(100, pct) + '%';
+    pctEl.textContent = pct + '%';
+  }
+}
+
+socket.on('mag_cal_report', function(data) {
+  if (!_calActive || _calType !== 'mag') return;
+  var id = data.compass_id;
+  var status = data.cal_status;
+
+  // Ensure the compass bar exists (in case MAG_CAL_PROGRESS was never received)
+  if (!_calMagCompasses[id]) {
+    _calMagCompasses[id] = true;
+    _calMagFinished[id] = false;
+    renderMagCompassBar(id);
+  }
+
+  var pctEl = document.getElementById('cal_mag_pct_' + id);
+  var fill = document.getElementById('cal_mag_fill_' + id);
+
+  if (status === 4) { // COMPLETED
+    if (fill) { fill.className = 'cal-mag-fill done'; fill.style.width = '100%'; }
+    if (pctEl) pctEl.textContent = '100%';
+    _calMagFinished[id] = true;
+  } else if (status === 3) { // FAILED
+    if (fill) { fill.className = 'cal-mag-fill failed'; }
+    _calMagFinished[id] = true;
+  } else if (status === 5) { // BAD_ORIENTATION
+    if (fill) { fill.className = 'cal-mag-fill failed'; }
+    _calMagFinished[id] = true;
+    notify('Compass #' + id + ': bad orientation', 'warning');
+  } else if (status === 6) { // BAD_RADIUS
+    if (fill) { fill.className = 'cal-mag-fill failed'; }
+    _calMagFinished[id] = true;
+    notify('Compass #' + id + ': bad radius', 'warning');
+  }
+
+  // Check if all compasses finished
+  var allDone = true;
+  for (var cid in _calMagCompasses) {
+    if (!_calMagFinished[cid]) { allDone = false; break; }
+  }
+
+  if (allDone) {
+    _calActive = false;
+    var autosaved = data.autosaved;
+    var success = true;
+    var failedCompasses = [];
+    for (var cid2 in _calMagFinished) {
+      if (!_calMagFinished[cid2]) { success = false; failedCompasses.push(cid2); }
+    }
+
+    document.getElementById('calProgressBar').style.width = '100%';
+    var resultDiv = document.getElementById('calResult');
+    var resultText = document.getElementById('calResultText');
+    var offsetsDiv = document.getElementById('calResultOffsets');
+    var rebootBtn = document.getElementById('calRebootBtn');
+
+    resultDiv.classList.remove('hidden');
+
+    if (success) {
+      resultText.textContent = 'Calibration successful!';
+      resultText.className = 'cal-result-text success';
+      offsetsDiv.textContent = 'Offsets: X=' + data.ofs_x + ' Y=' + data.ofs_y + ' Z=' + data.ofs_z + ' (confidence: ' + data.confidence + '%)';
+      rebootBtn.classList.remove('hidden');
+      if (autosaved) {
+        document.getElementById('calStatus').textContent = 'Offsets auto-saved. A reboot is required to use them.';
+      } else {
+        document.getElementById('calStatus').textContent = 'Reboot required to apply calibration.';
+      }
+      document.getElementById('calInstruction').textContent = 'All compasses calibrated successfully.';
+    } else {
+      resultText.textContent = 'Calibration failed for some compasses';
+      resultText.className = 'cal-result-text failed';
+      offsetsDiv.textContent = '';
+      rebootBtn.classList.add('hidden');
+      document.getElementById('calStatus').textContent = 'Try again or adjust calibration settings.';
+      document.getElementById('calInstruction').textContent = 'Failed compasses: #' + failedCompasses.join(', #');
+    }
+    document.getElementById('calAbortBtn').textContent = 'Close';
+  }
+});
 
 function updateTelemetry(data) {
   setText('t_lat', data.lat?.toFixed(7) ?? '0.0000000');
@@ -446,6 +810,7 @@ function initMap(lat, lon) {
     trailGroup = L.featureGroup().addTo(window.map);
     missionWpGroup = L.featureGroup().addTo(window.map);
     fenceGroup = L.featureGroup().addTo(window.map);
+    targetGroup = L.featureGroup().addTo(window.map);
 
     L.control.layers({
       'Street': osm,
@@ -457,6 +822,7 @@ function initMap(lat, lon) {
       'Trail': trailGroup,
       'Mission WPs': missionWpGroup,
       'Fence': fenceGroup,
+      'Targets': targetGroup,
     }, { position: 'topright' }).addTo(window.map);
     if (window._lastMissionData) drawMissionWaypoints(window._lastMissionData.waypoints || []);
     if (window._lastFenceData) drawFencePoints(window._lastFenceData.points || []);
@@ -939,15 +1305,22 @@ function checkNotifications(data) {
   }
 }
 
+function toggleActionPanel() {
+  var panel = document.getElementById('actionPanel');
+  var btn = document.getElementById('collapseActionBtn');
+  if (!panel || !btn) return;
+  panel.classList.toggle('collapsed');
+  if (panel.classList.contains('collapsed')) {
+    btn.textContent = '\u25C0';
+    btn.title = 'Expand panel';
+  } else {
+    btn.textContent = '\u25B6';
+    btn.title = 'Collapse panel';
+  }
+}
+
 function switchActionTab(tab) {
-  var tabs = document.querySelectorAll('.action-tab');
-  tabs.forEach(function(t) { t.classList.remove('active'); });
-  var activeTab = document.querySelector('.action-tab[data-tab="' + tab + '"]');
-  if (activeTab) activeTab.classList.add('active');
-  document.getElementById('controlPanel').classList.add('hidden');
-  document.getElementById('healthPanel').classList.add('hidden');
-  document.getElementById('statsPanel').classList.add('hidden');
-  document.getElementById(tab + 'Panel').classList.remove('hidden');
+  // no-op — health/stats moved to sidebar tabs
 }
 
 /* HUD - Attitude Indicator + Compass */
@@ -1031,6 +1404,8 @@ function updateHud(data) {
       setText('hudDist', d.toFixed(0));
     }
   }
+
+  // Right panel target distances updated in state_update
 
   // Draw attitude canvas
   drawAttitudeCanvas(data.roll ?? 0, data.pitch ?? 0, data.heading ?? 0);
@@ -1309,8 +1684,9 @@ function feedCharts(data) {
 }
 
 function switchSidebarTab(tab) {
-  var cardId = tab === 'charts' ? 'sideCardCharts' : tab === 'inspector' ? 'sideCardInspector' : 'sideCardTelemetry';
+  var cardId = tab === 'charts' ? 'sideCardCharts' : tab === 'inspector' ? 'sideCardInspector' : tab === 'health' ? 'sideCardHealth' : tab === 'stats' ? 'sideCardStats' : tab === 'targets' ? 'sideCardTargets' : tab === 'camera' ? 'sideCardCamera' : 'sideCardTelemetry';
   var card = document.getElementById(cardId);
+  if (!card) return;
   var isOpen = !card.classList.contains('hidden');
   var btns = document.querySelectorAll('.sidebar-btn');
   btns.forEach(function(b) { b.classList.remove('active'); });
@@ -1322,8 +1698,8 @@ function switchSidebarTab(tab) {
     }
     return;
   }
-  var cards = ['sideCardTelemetry', 'sideCardCharts', 'sideCardInspector'];
-  cards.forEach(function(id) { document.getElementById(id).classList.add('hidden'); });
+  var cards = ['sideCardTelemetry', 'sideCardCharts', 'sideCardInspector', 'sideCardHealth', 'sideCardStats', 'sideCardTargets', 'sideCardCamera'];
+  cards.forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.add('hidden'); });
   var activeBtn = document.querySelector('.sidebar-btn[data-tab="' + tab + '"]');
   if (activeBtn) activeBtn.classList.add('active');
   if (tab === 'charts') {
@@ -1341,6 +1717,30 @@ function switchSidebarTab(tab) {
     document.getElementById('sideCardInspector').classList.remove('hidden');
     inspectorState.active = true;
     socket.emit('start_inspector');
+  } else if (tab === 'health') {
+    document.getElementById('sideCardHealth').classList.remove('hidden');
+    if (inspectorState.active) {
+      inspectorState.active = false;
+      socket.emit('stop_inspector');
+    }
+  } else if (tab === 'stats') {
+    document.getElementById('sideCardStats').classList.remove('hidden');
+    if (inspectorState.active) {
+      inspectorState.active = false;
+      socket.emit('stop_inspector');
+    }
+  } else if (tab === 'targets') {
+    document.getElementById('sideCardTargets').classList.remove('hidden');
+    if (inspectorState.active) {
+      inspectorState.active = false;
+      socket.emit('stop_inspector');
+    }
+  } else if (tab === 'camera') {
+    document.getElementById('sideCardCamera').classList.remove('hidden');
+    if (inspectorState.active) {
+      inspectorState.active = false;
+      socket.emit('stop_inspector');
+    }
   } else {
     if (inspectorState.active) {
       inspectorState.active = false;
@@ -1693,8 +2093,10 @@ function updateFencePanel(data) {
 
 document.addEventListener('DOMContentLoaded', () => {
   if (document.getElementById('map')) initMap(37.7749, -122.4194);
-  initWaterfall('waterfallCanvas');
+  restoreAppState();
   initCharts();
+  initCameraDevices();
+  initCameraResize();
   var hudBtn = document.getElementById('hudToggleBtn');
   var hudOv = document.getElementById('hudOverlay');
   if (hudBtn && hudOv) {
@@ -1721,4 +2123,597 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
+// ===== Target Points =====
+var _editTargetIdx = -1;
+
+function saveTarget() {
+  var lat = parseFloat(document.getElementById('targetLat').value);
+  var lon = parseFloat(document.getElementById('targetLon').value);
+  var name = document.getElementById('targetName').value.trim();
+  if (isNaN(lat) || isNaN(lon)) { alert('Enter valid Lat/Lon values.'); return; }
+  if (!name) { name = 'T' + (targetPoints.length + 1); }
+
+  if (_editTargetIdx >= 0 && _editTargetIdx < targetPoints.length) {
+    targetPoints[_editTargetIdx] = { lat: lat, lon: lon, name: name };
+    log('Target updated: ' + name, 'success');
+  } else {
+    targetPoints.push({ lat: lat, lon: lon, name: name });
+    log('Target added: ' + name + ' (' + lat.toFixed(6) + ', ' + lon.toFixed(6) + ')', 'success');
+  }
+  cancelEditTarget();
+  persistTargets();
+  renderTargetList();
+  renderTargetMarkers();
+  updateTargetDistPanel(window.vehicle || {});
+}
+
+function cancelEditTarget() {
+  _editTargetIdx = -1;
+  document.getElementById('targetLat').value = '';
+  document.getElementById('targetLon').value = '';
+  document.getElementById('targetName').value = '';
+  document.getElementById('targetSaveBtn').textContent = '+ ADD';
+  document.getElementById('targetCancelBtn').classList.add('hidden');
+}
+
+function editTarget(idx) {
+  var t = targetPoints[idx];
+  if (!t) return;
+  _editTargetIdx = idx;
+  document.getElementById('targetLat').value = t.lat;
+  document.getElementById('targetLon').value = t.lon;
+  document.getElementById('targetName').value = t.name || '';
+  document.getElementById('targetSaveBtn').textContent = 'UPDATE';
+  document.getElementById('targetCancelBtn').classList.remove('hidden');
+}
+
+function removeTarget(idx) {
+  if (!confirm('Delete target "' + (targetPoints[idx].name || ('T' + (idx + 1))) + '"?')) return;
+  if (_editTargetIdx === idx) cancelEditTarget();
+  targetPoints.splice(idx, 1);
+  persistTargets();
+  renderTargetList();
+  renderTargetMarkers();
+  updateTargetDistPanel(window.vehicle || {});
+}
+
+function renderTargetList() {
+  var container = document.getElementById('targetListContainer');
+  if (!container) return;
+  var v = window.vehicle;
+  if (targetPoints.length === 0) {
+    container.innerHTML = '<div style="color:#475569;font-size:10px;text-align:center;padding:12px 0">No targets added yet.</div>';
+    return;
+  }
+  var h = '<div class="target-list-inner" style="display:flex;flex-direction:column;gap:2px">';
+  targetPoints.forEach(function(t, i) {
+    var d = (v && v.lat && v.lon) ? haversine(v.lat, v.lon, t.lat, t.lon) : 0;
+    var distStr = d >= 1000 ? (d / 1000).toFixed(2) + ' km' : d.toFixed(0) + ' m';
+    var name = t.name || ('T' + (i + 1));
+    h += '<div class="target-item" data-idx="' + i + '" style="background:#0f172a;border-radius:6px;padding:6px 8px;display:flex;align-items:center;gap:6px">';
+    h += '<span style="color:#7c3aed;font-weight:700;font-size:10px;min-width:18px">' + (i + 1) + '</span>';
+    h += '<div style="flex:1;min-width:0">';
+    h += '<div style="color:#e2e8f0;font-size:11px;font-weight:600">' + name + '</div>';
+    h += '<div style="color:#64748b;font-size:9px">' + t.lat.toFixed(6) + ', ' + t.lon.toFixed(6) + '</div>';
+    h += '</div>';
+    h += '<div style="text-align:right">';
+    h += '<div style="color:#22c55e;font-size:11px;font-weight:700">' + distStr + '</div>';
+    h += '</div>';
+    h += '<div class="target-actions" style="display:flex;gap:3px">';
+    h += '<button onclick="editTarget(' + i + ')" style="background:none;border:1px solid #334155;border-radius:4px;color:#94a3b8;cursor:pointer;font-size:10px;padding:2px 6px" title="Edit">&#x270E;</button>';
+    h += '<button onclick="removeTarget(' + i + ')" style="background:none;border:1px solid #334155;border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 6px" title="Delete">&#x2716;</button>';
+    h += '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  container.innerHTML = h;
+}
+
+function renderTargetMarkers() {
+  if (!targetGroup) return;
+  targetGroup.clearLayers();
+  targetPoints.forEach(function(t, i) {
+    var name = t.name || ('T' + (i + 1));
+    var marker = L.marker([t.lat, t.lon], {
+      icon: L.divIcon({
+        className: 'target-marker',
+        html: '<div style="width:26px;height:26px;background:#7c3aed;border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:9px;font-weight:700;box-shadow:0 0 10px rgba(124,58,237,0.6);">' + name + '</div>',
+        iconSize: [26, 26], iconAnchor: [13, 13],
+      }),
+      interactive: false,
+    }).addTo(targetGroup);
+    marker.bindTooltip('<b>' + name + '</b><br>' + t.lat.toFixed(6) + ', ' + t.lon.toFixed(6), { direction: 'top' });
+  });
+}
+
+function updateTargetDistPanel(data) {
+  var panel = document.getElementById('targetDistPanel');
+  var list = document.getElementById('targetDistList');
+  var count = document.getElementById('targetDistCount');
+  if (!panel || !list) return;
+  if (targetPoints.length === 0 || !data.lat || !data.lon) {
+    panel.classList.add('hidden');
+    return;
+  }
+  panel.classList.remove('hidden');
+  if (count) count.textContent = targetPoints.length;
+  var h = '';
+  targetPoints.forEach(function(t, i) {
+    var d = haversine(data.lat, data.lon, t.lat, t.lon);
+    var name = t.name || ('T' + (i + 1));
+    var cls = 'target-dist-item';
+    if (d > 10000) cls += ' far';
+    h += '<div class="' + cls + '" style="display:flex;align-items:center;padding:5px 0;border-bottom:1px solid #1e293b">';
+    h += '<span style="color:#7c3aed;font-weight:700;font-size:11px;min-width:20px">' + (i + 1) + '</span>';
+    h += '<span style="color:#e2e8f0;font-size:11px;font-weight:600;flex:1">' + name + '</span>';
+    if (d >= 1000) {
+      h += '<span style="color:#22c55e;font-size:12px;font-weight:700">' + (d / 1000).toFixed(2) + ' km</span>';
+    } else {
+      h += '<span style="color:#22c55e;font-size:12px;font-weight:700">' + d.toFixed(0) + ' m</span>';
+    }
+    h += '</div>';
+  });
+  list.innerHTML = h;
+}
+
+// ===== State Persistence =====
+function persistTargets() {
+  try { localStorage.setItem('sgc_targets', JSON.stringify(targetPoints)); } catch(e) {}
+}
+
+function saveAppState() {
+  persistTargets();
+  try {
+    var v = window.vehicle;
+    if (v && v.connected) {
+      sessionStorage.setItem('sgc_was_connected', '1');
+      var r = buildConnString();
+      sessionStorage.setItem('sgc_conn_str', r.conn);
+      sessionStorage.setItem('sgc_conn_baud', String(r.baud));
+      if (v.lat) sessionStorage.setItem('sgc_last_lat', String(v.lat));
+      if (v.lon) sessionStorage.setItem('sgc_last_lon', String(v.lon));
+    } else {
+      sessionStorage.setItem('sgc_was_connected', '0');
+    }
+  } catch(e) {}
+
+  // Notification prev-state
+  try {
+    sessionStorage.setItem('sgc_n_connected', _nPrevConnected ? '1' : '0');
+    sessionStorage.setItem('sgc_n_mode', _nPrevMode);
+    sessionStorage.setItem('sgc_n_armed', _nPrevArmed ? '1' : '0');
+    sessionStorage.setItem('sgc_n_low20', _nLowBatt20 ? '1' : '0');
+    sessionStorage.setItem('sgc_n_low10', _nLowBatt10 ? '1' : '0');
+  } catch(e) {}
+
+  // Flight stats
+  try {
+    sessionStorage.setItem('sgc_fs_home_set', _fsHomeSet ? '1' : '0');
+    sessionStorage.setItem('sgc_fs_home_lat', String(_fsHomeLat));
+    sessionStorage.setItem('sgc_fs_home_lon', String(_fsHomeLon));
+    sessionStorage.setItem('sgc_fs_max_alt', String(_fsMaxAlt));
+    sessionStorage.setItem('sgc_fs_max_gs', String(_fsMaxGS));
+    sessionStorage.setItem('sgc_fs_max_dist', String(_fsMaxDist));
+    sessionStorage.setItem('sgc_fs_armed', _fsArmed ? '1' : '0');
+    if (_fsTimerStart) sessionStorage.setItem('sgc_fs_timer_start', String(_fsTimerStart));
+  } catch(e) {}
+
+  // HUD state
+  try {
+    if (_hudConnStart !== null) sessionStorage.setItem('sgc_hud_conn_start', String(_hudConnStart));
+    sessionStorage.setItem('sgc_hud_climb', String(_hudClimb));
+    if (_hudLastAlt !== null) sessionStorage.setItem('sgc_hud_last_alt', String(_hudLastAlt));
+    if (_hudLastTime !== null) sessionStorage.setItem('sgc_hud_last_time', String(_hudLastTime));
+  } catch(e) {}
+
+  // Log-request guard
+  try {
+    sessionStorage.setItem('sgc_logs_requested', _logsRequested ? '1' : '0');
+  } catch(e) {}
+
+  // Console content
+  try {
+    var consoleEl = document.getElementById('consoleOutput');
+    if (consoleEl && consoleEl.children.length > 0) {
+      sessionStorage.setItem('sgc_console_html', consoleEl.innerHTML);
+    }
+  } catch(e) {}
+}
+
+function restoreAppState() {
+  // Restore targets
+  try {
+    var saved = localStorage.getItem('sgc_targets');
+    if (saved) {
+      targetPoints = JSON.parse(saved) || [];
+      renderTargetList();
+      renderTargetMarkers();
+      updateTargetDistPanel(window.vehicle || {});
+    }
+  } catch(e) {}
+
+  // Restore notification prev-state (prevents reconnect popups)
+  try {
+    var nc = sessionStorage.getItem('sgc_n_connected');
+    if (nc !== null) _nPrevConnected = nc === '1';
+    var nm = sessionStorage.getItem('sgc_n_mode');
+    if (nm !== null) _nPrevMode = nm;
+    var na = sessionStorage.getItem('sgc_n_armed');
+    if (na !== null) _nPrevArmed = na === '1';
+    var nl20 = sessionStorage.getItem('sgc_n_low20');
+    if (nl20 !== null) _nLowBatt20 = nl20 === '1';
+    var nl10 = sessionStorage.getItem('sgc_n_low10');
+    if (nl10 !== null) _nLowBatt10 = nl10 === '1';
+  } catch(e) {}
+
+  // Restore flight stats (preserves max alt/speed/dist and flight timer)
+  try {
+    var fh = sessionStorage.getItem('sgc_fs_home_set');
+    if (fh !== null) _fsHomeSet = fh === '1';
+    var fhl = sessionStorage.getItem('sgc_fs_home_lat');
+    if (fhl !== null) _fsHomeLat = parseFloat(fhl);
+    var fhln = sessionStorage.getItem('sgc_fs_home_lon');
+    if (fhln !== null) _fsHomeLon = parseFloat(fhln);
+    var fma = sessionStorage.getItem('sgc_fs_max_alt');
+    if (fma !== null) _fsMaxAlt = parseFloat(fma);
+    var fmg = sessionStorage.getItem('sgc_fs_max_gs');
+    if (fmg !== null) _fsMaxGS = parseFloat(fmg);
+    var fmd = sessionStorage.getItem('sgc_fs_max_dist');
+    if (fmd !== null) _fsMaxDist = parseFloat(fmd);
+    var fa = sessionStorage.getItem('sgc_fs_armed');
+    if (fa !== null) _fsArmed = fa === '1';
+    var fts = sessionStorage.getItem('sgc_fs_timer_start');
+    if (fts !== null) {
+      _fsTimerStart = parseFloat(fts);
+      window.clearInterval(_fsTimerInterval);
+      _fsTimerInterval = window.setInterval(updateFlightTimer, 1000);
+    }
+  } catch(e) {}
+
+  // Restore HUD state (preserves connection time counter)
+  try {
+    var hcs = sessionStorage.getItem('sgc_hud_conn_start');
+    if (hcs !== null) _hudConnStart = parseFloat(hcs);
+    var hc = sessionStorage.getItem('sgc_hud_climb');
+    if (hc !== null) _hudClimb = parseFloat(hc);
+    var hla = sessionStorage.getItem('sgc_hud_last_alt');
+    if (hla !== null) _hudLastAlt = parseFloat(hla);
+    var hlt = sessionStorage.getItem('sgc_hud_last_time');
+    if (hlt !== null) _hudLastTime = parseFloat(hlt);
+  } catch(e) {}
+
+  // Restore log-request guard
+  try {
+    var lr = sessionStorage.getItem('sgc_logs_requested');
+    if (lr !== null) _logsRequested = lr === '1';
+  } catch(e) {}
+
+  // Restore console content (preserves previous log messages across navigation)
+  try {
+    var consoleHtml = sessionStorage.getItem('sgc_console_html');
+    if (consoleHtml) {
+      var consoleEl = document.getElementById('consoleOutput');
+      if (consoleEl) { consoleEl.innerHTML = consoleHtml; consoleEl.scrollTop = consoleEl.scrollHeight; }
+    }
+  } catch(e) {}
+
+  // Restore connection — the server already sends state_update on
+  // socket reconnect via its on_connect handler, so no connect_request needed.
+  try {
+    if (sessionStorage.getItem('sgc_was_connected') === '1') {
+      var btn = document.getElementById('connectBtn');
+      if (btn) { btn.textContent = '\u25CF Connected'; btn.classList.add('connected'); btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+    }
+  } catch(e) {}
+
+  // Restore map center
+  try {
+    var lat = parseFloat(sessionStorage.getItem('sgc_last_lat'));
+    var lon = parseFloat(sessionStorage.getItem('sgc_last_lon'));
+    if (!isNaN(lat) && !isNaN(lon) && window.map) {
+      window.map.setView([lat, lon], window.map.getZoom());
+    }
+  } catch(e) {}
+}
+
+// ===== Camera =====
+var _cam = {
+  source: 'network',
+  netConnected: false,
+  netActive: false,
+  netRetryTimer: null,
+  localStream: null,
+  localActive: false,
+  fpsInterval: null,
+};
+
+var _camEnumCount = 0;
+
+function initCameraDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    var sel = document.getElementById('cameraDeviceSelect');
+    if (!sel) return;
+    var videoDevices = devices.filter(function(d) { return d.kind === 'videoinput'; });
+    sel.innerHTML = '';
+    if (videoDevices.length === 0) {
+      sel.innerHTML = '<option value="">No camera found</option>';
+      return;
+    }
+    videoDevices.forEach(function(device, i) {
+      var opt = document.createElement('option');
+      // Use a unique placeholder when deviceId is empty (pre-permission state)
+      if (device.deviceId && device.deviceId !== '') {
+        opt.value = device.deviceId;
+      } else {
+        opt.value = '__cam_' + i;
+      }
+      opt.textContent = device.label || 'Camera ' + (i + 1);
+      sel.appendChild(opt);
+    });
+    _camEnumCount = videoDevices.length;
+  }).catch(function() {});
+}
+
+function switchCameraSource(type) {
+  // Disconnect current source first
+  if (_cam.source === 'network' && _cam.netConnected) {
+    disconnectNetworkStream();
+  }
+  if (_cam.source === 'local' && _cam.localActive) {
+    stopLocalCamera();
+  }
+  _cam.source = type;
+  document.getElementById('camSrcNetwork').className = 'camera-source-btn' + (type === 'network' ? ' active' : '');
+  document.getElementById('camSrcLocal').className = 'camera-source-btn' + (type === 'local' ? ' active' : '');
+  document.getElementById('cameraUrlRow').classList.toggle('hidden', type !== 'network');
+  document.getElementById('cameraDeviceRow').classList.toggle('hidden', type !== 'local');
+
+  var placeholder = document.getElementById('cameraPlaceholder');
+  placeholder.classList.remove('hidden');
+  placeholder.querySelector('.camera-placeholder-text').textContent = 'No video source';
+  placeholder.querySelector('.camera-placeholder-hint').textContent =
+    type === 'network' ? 'Enter a stream URL below' : 'Select a camera and click Start';
+  document.getElementById('cameraImage').classList.add('hidden');
+  document.getElementById('cameraImage').src = '';
+  document.getElementById('cameraVideo').classList.add('hidden');
+  document.getElementById('cameraVideo').srcObject = null;
+  document.getElementById('cameraStatus').classList.add('hidden');
+  document.getElementById('cameraInfo').classList.add('hidden');
+
+  if (type === 'local') initCameraDevices();
+}
+
+function disconnectNetworkStream() {
+  _cam.netConnected = false;
+  _cam.netActive = false;
+  if (_cam.netRetryTimer) { clearTimeout(_cam.netRetryTimer); _cam.netRetryTimer = null; }
+  var img = document.getElementById('cameraImage');
+  img.classList.add('hidden');
+  img.src = '';
+  var btn = document.getElementById('cameraConnectBtn');
+  btn.textContent = 'Connect';
+  btn.classList.remove('connected');
+  btn.disabled = false;
+  document.getElementById('cameraPlaceholder').classList.remove('hidden');
+  document.getElementById('cameraStatus').classList.add('hidden');
+  document.getElementById('cameraInfo').classList.add('hidden');
+}
+
+function toggleCameraStream() {
+  var btn = document.getElementById('cameraConnectBtn');
+  var img = document.getElementById('cameraImage');
+  var placeholder = document.getElementById('cameraPlaceholder');
+  var status = document.getElementById('cameraStatus');
+  var statusText = document.getElementById('cameraStatusText');
+  var statusDot = document.getElementById('cameraStatusDot');
+  var info = document.getElementById('cameraInfo');
+
+  if (_cam.netConnected) { disconnectNetworkStream(); return; }
+
+  var url = document.getElementById('cameraUrl').value.trim();
+  if (!url) { notify('Enter a stream URL', 'warning'); return; }
+
+  _cam.netActive = true;
+  btn.textContent = 'Connecting...';
+  btn.disabled = true;
+  placeholder.classList.add('hidden');
+  status.classList.remove('hidden');
+  statusDot.className = 'camera-status-dot connecting';
+  statusText.textContent = 'Connecting...';
+
+  img.onload = function() {
+    _cam.netConnected = true;
+    btn.textContent = 'Disconnect';
+    btn.classList.add('connected');
+    btn.disabled = false;
+    statusDot.className = 'camera-status-dot connected';
+    statusText.textContent = 'Connected';
+    info.classList.remove('hidden');
+    document.getElementById('cameraInfoRes').textContent = img.naturalWidth + 'x' + img.naturalHeight;
+    _cam.netRetryTimer = null;
+  };
+
+  img.onerror = function() {
+    if (!_cam.netActive) return;
+    statusDot.className = 'camera-status-dot error';
+    statusText.textContent = 'Connection failed';
+    btn.textContent = 'Retry';
+    btn.classList.remove('connected');
+    btn.disabled = false;
+    info.classList.add('hidden');
+    _cam.netConnected = false;
+    _cam.netRetryTimer = setTimeout(function() {
+      if (_cam.netActive) toggleCameraStream();
+    }, 5000);
+  };
+
+  img.classList.remove('hidden');
+  img.src = url;
+}
+
+function toggleLocalCamera() {
+  if (_cam.localActive) { stopLocalCamera(); return; }
+  startLocalCamera();
+}
+
+function startLocalCamera() {
+  var sel = document.getElementById('cameraDeviceSelect');
+
+  var btn = document.getElementById('cameraLocalBtn');
+  var video = document.getElementById('cameraVideo');
+  var placeholder = document.getElementById('cameraPlaceholder');
+  var status = document.getElementById('cameraStatus');
+  var statusText = document.getElementById('cameraStatusText');
+  var statusDot = document.getElementById('cameraStatusDot');
+  var info = document.getElementById('cameraInfo');
+
+  btn.textContent = 'Starting...';
+  btn.disabled = true;
+  placeholder.classList.add('hidden');
+  status.classList.remove('hidden');
+  statusDot.className = 'camera-status-dot connecting';
+  statusText.textContent = 'Starting camera...';
+
+  var constraints = {
+    video: { width: { ideal: 1920 }, height: { ideal: 1080 } },
+    audio: false,
+  };
+  if (sel && sel.value && !sel.value.startsWith('__cam_')) {
+    constraints.video.deviceId = { exact: sel.value };
+  }
+
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream) {
+    _cam.localStream = stream;
+    _cam.localActive = true;
+    // Re-enumerate after permission granted to get full device list
+    initCameraDevices();
+    video.srcObject = stream;
+    video.classList.remove('hidden');
+    btn.textContent = 'Stop Camera';
+    btn.classList.add('connected');
+    btn.disabled = false;
+    statusDot.className = 'camera-status-dot connected';
+    statusText.textContent = 'Connected';
+    info.classList.remove('hidden');
+
+    // Wait for video metadata to get resolution
+    video.onloadedmetadata = function() {
+      document.getElementById('cameraInfoRes').textContent = video.videoWidth + 'x' + video.videoHeight;
+    };
+
+    // Estimate FPS
+    var frameCount = 0; var lastFpsTime = Date.now();
+    if (_cam.fpsInterval) clearInterval(_cam.fpsInterval);
+    _cam.fpsInterval = setInterval(function() {
+      frameCount++;
+      var now = Date.now();
+      if (now - lastFpsTime >= 1000) {
+        var el = document.getElementById('cameraInfoFps');
+        if (el) el.textContent = Math.round(frameCount / ((now - lastFpsTime) / 1000)) + ' fps';
+        frameCount = 0; lastFpsTime = now;
+      }
+    }, 200);
+  }).catch(function(err) {
+    btn.textContent = 'Start Camera';
+    btn.disabled = false;
+    statusDot.className = 'camera-status-dot error';
+    statusText.textContent = 'Camera error: ' + (err.name === 'NotAllowedError' ? 'Permission denied' : err.message);
+    placeholder.classList.remove('hidden');
+    notify('Camera error: ' + err.message, 'danger');
+  });
+}
+
+function stopLocalCamera() {
+  if (!_cam.localActive) return;
+  _cam.localActive = false;
+  if (_cam.localStream) {
+    _cam.localStream.getTracks().forEach(function(t) { t.stop(); });
+    _cam.localStream = null;
+  }
+  if (_cam.fpsInterval) { clearInterval(_cam.fpsInterval); _cam.fpsInterval = null; }
+  var video = document.getElementById('cameraVideo');
+  video.srcObject = null;
+  video.classList.add('hidden');
+  document.getElementById('cameraPlaceholder').classList.remove('hidden');
+  document.getElementById('cameraStatus').classList.add('hidden');
+  document.getElementById('cameraInfo').classList.add('hidden');
+  var btn = document.getElementById('cameraLocalBtn');
+  btn.textContent = 'Start Camera';
+  btn.classList.remove('connected');
+  btn.disabled = false;
+}
+
+function cameraDeviceChanged() {
+  if (_cam.localActive) {
+    stopLocalCamera();
+  }
+}
+
+function cameraSnapshot() {
+  var img = document.getElementById('cameraImage');
+  var video = document.getElementById('cameraVideo');
+  var canvas = document.createElement('canvas');
+  var ctx = canvas.getContext('2d');
+  var source = null;
+
+  if (_cam.source === 'network' && _cam.netConnected && !img.classList.contains('hidden')) {
+    source = img;
+  } else if (_cam.source === 'local' && _cam.localActive && !video.classList.contains('hidden')) {
+    source = video;
+  }
+
+  if (!source) { notify('No active camera feed', 'warning'); return; }
+
+  canvas.width = source.videoWidth || source.naturalWidth || 640;
+  canvas.height = source.videoHeight || source.naturalHeight || 480;
+  ctx.drawImage(source, 0, 0);
+  var link = document.createElement('a');
+  link.download = 'snapshot_' + new Date().toISOString().slice(0,19).replace(/[:-]/g, '') + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  notify('Snapshot saved', 'success');
+}
+
+function cameraFullscreen() {
+  var feed = document.getElementById('cameraFeed');
+  if (!feed) return;
+  if (feed.requestFullscreen) { feed.requestFullscreen(); }
+  else if (feed.webkitRequestFullscreen) { feed.webkitRequestFullscreen(); }
+  else if (feed.msRequestFullscreen) { feed.msRequestFullscreen(); }
+}
+
+function cameraSettings() {
+  notify('Camera settings coming soon', 'info');
+}
+
+function initCameraResize() {
+  var handle = document.getElementById('cameraResizeHandle');
+  var card = document.getElementById('sideCardCamera');
+  if (!handle || !card) return;
+  handle.addEventListener('mousedown', function(e) {
+    e.preventDefault();
+    var startX = e.clientX;
+    var startWidth = card.offsetWidth;
+    handle.classList.add('active');
+    function onMove(ev) {
+      var w = startWidth + startX - ev.clientX;
+      w = Math.max(240, Math.min(window.innerWidth * 0.9, w));
+      card.style.width = w + 'px';
+    }
+    function onUp() {
+      handle.classList.remove('active');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
+window.addEventListener('beforeunload', function() {
+  saveAppState();
+  if (_cam.netRetryTimer) clearTimeout(_cam.netRetryTimer);
+  if (_cam.localActive) stopLocalCamera();
+});
 

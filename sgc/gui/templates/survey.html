@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Survey Grid</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/static/css/style.css?v=12" />
+  <style>
+    #main { flex-direction: row; }
+    #surveySidebar {
+      width: 320px; min-width: 280px; background: #1e293b; overflow-y: auto;
+      border-right: 1px solid #334155; display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    #surveySidebar h3 {
+      color: #7c3aed; font-size: 11px; font-weight: 700; letter-spacing: 1.5px;
+      padding: 12px 12px 8px; margin: 0;
+    }
+    .survey-toolbar { padding: 8px 12px; display: flex; gap: 6px; align-items: center; }
+    .survey-toolbar button {
+      background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+      border-radius: 6px; padding: 6px 14px; font-size: 12px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .survey-toolbar button:hover { background: #334155; }
+    .survey-toolbar button.primary { background: #7c3aed; border-color: #7c3aed; }
+    .survey-toolbar button.primary:hover { background: #6d28d9; }
+    .survey-toolbar button.success { background: #22c55e; border-color: #22c55e; color: #0f172a; }
+    .survey-toolbar button.success:hover { background: #16a34a; }
+    .survey-dd { position: relative; }
+    .survey-dd-trigger { display: flex; align-items: center; gap: 4px; }
+    .dd-arrow { font-size: 10px; }
+    .survey-dd-menu {
+      position: absolute; top: 100%; left: 0; z-index: 10; min-width: 180px;
+      background: #0f172a; border: 1px solid #334155; border-radius: 8px;
+      padding: 4px 0; margin-top: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .survey-dd-menu.hidden { display: none; }
+    .survey-dd-menu div {
+      padding: 8px 14px; font-size: 12px; color: #e2e8f0; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .survey-dd-menu div:hover { background: #334155; }
+    .survey-dd-menu .dd-danger { color: #ef4444; }
+    .survey-dd-menu .dd-danger:hover { background: #334155; color: #dc2626; }
+    .dd-sep { height: 1px; background: #334155; margin: 4px 8px; padding: 0 !important; cursor: default !important; }
+    .survey-status { padding: 8px 12px; color: #94a3b8; font-size: 12px; border-top: 1px solid #334155; margin-top: auto; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <nav id="menubar">
+      <div class="menu-title">SGC - Survey Grid</div>
+    </nav>
+
+    <div id="toolbar">
+      <button class="toolbar-back" onclick="location.href='/'">&#8592;</button>
+      <div style="flex:1"></div>
+      <img src="/logo.png" id="topLogo" alt="SGC">
+    </div>
+
+    <div id="main">
+      <div id="surveySidebar">
+        <h3>SURVEY GRID</h3>
+        <div class="survey-toolbar" onclick="event.stopPropagation()">
+          <button class="primary" onclick="uploadSurvey()">UPLOAD</button>
+          <button class="success" onclick="showGridDialog()">GENERATE</button>
+          <div class="survey-dd">
+            <button class="survey-dd-trigger" onclick="toggleSurveyDropdown(event)">MORE <span class="dd-arrow">&#9662;</span></button>
+            <div id="surveyDropdown" class="survey-dd-menu hidden">
+              <div onclick="saveSurveyFile();closeSurveyDropdown()">Save to File</div>
+              <div onclick="loadSurveyFile();closeSurveyDropdown()">Load from File</div>
+              <div class="dd-sep"></div>
+              <div class="dd-danger" onclick="clearSurvey();closeSurveyDropdown()">Clear All</div>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;overflow-y:auto">
+          <table class="wp-table">
+            <thead><tr>
+              <th style="width:30px">#</th>
+              <th style="width:90px">Lat</th>
+              <th style="width:90px">Lon</th>
+              <th style="width:50px">Alt</th>
+            </tr></thead>
+            <tbody id="surveyWpList"></tbody>
+          </table>
+        </div>
+        <div class="survey-status" id="surveyStatus">Click the map to draw a survey polygon.</div>
+      </div>
+
+      <div id="map" class="map-container"></div>
+    </div>
+
+    <div id="notifContainer"></div>
+
+    <div id="statusbar">
+      <span id="statusMessage">Survey Grid</span>
+    </div>
+  </div>
+
+  <div id="mapContextMenu" class="context-menu hidden">
+    <div id="ctxFinishPolygon" onclick="finishPolygon()">Finish Polygon</div>
+    <div id="ctxClearPolygon" class="hidden" onclick="clearPolygon()">Clear Polygon</div>
+  </div>
+
+  <!-- Grid Dialog -->
+  <div id="gridDialog" class="dialog-overlay hidden" onclick="if(event.target===this)closeGridDialog()">
+    <div class="dialog-box">
+      <h3>Auto Grid Settings</h3>
+      <div class="dialog-row">
+        <label>Altitude (m)</label>
+        <input type="number" id="gridAlt" value="50" min="1" step="1">
+      </div>
+      <div class="dialog-row">
+        <label>Spacing (m)</label>
+        <input type="number" id="gridSpacing" value="10" min="1" step="0.5">
+      </div>
+      <div class="dialog-row">
+        <label>Angle (&deg;)</label>
+        <input type="number" id="gridAngle" value="0" min="0" max="360" step="1">
+      </div>
+      <div class="dialog-btns">
+        <button class="secondary" onclick="closeGridDialog()">Cancel</button>
+        <button class="primary" onclick="generateGrid()">Generate</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="surveyFileInput" accept=".waypoints,.txt" style="display:none">
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/static/js/toolbar.js?v=11"></script>
+  <script src="/static/js/grid.js?v=10"></script>
+  <script src="/static/js/survey.js?v=2"></script>
+</body>
+</html>

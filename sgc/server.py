@@ -64,6 +64,11 @@ def rally_page():
     return render_template("rally.html")
 
 
+@app.route("/survey")
+def survey_page():
+    return render_template("survey.html")
+
+
 @app.route("/config")
 def config_page():
     return render_template("config.html")
@@ -171,6 +176,15 @@ def get_state():
     return {"connected": False}
 
 
+@app.route("/api/ports")
+def list_ports():
+    try:
+        ports = MAVLinkConnection.detect_ports(baud=57600, timeout=2)
+        return jsonify(ports)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @socketio.on("connect_request")
 def handle_connect_request(data=None):
     global _connection, _startup_done
@@ -200,6 +214,17 @@ def _do_connect(conn_str, baud):
         _broadcast("log", {"message": f"Connection failed: {e}", "level": "error"})
     _broadcast("log", {"message": "Connection failed — no vehicle detected", "level": "warning"})
     _startup_done = False
+
+@socketio.on("disconnect_request")
+def handle_disconnect_request():
+    global _connection, _startup_done
+    with _connection_lock:
+        if _connection:
+            _connection.disconnect()
+            _connection = None
+    _startup_done = False
+    _broadcast("log", {"message": "Disconnected from vehicle", "level": "info"})
+
 
 @socketio.on("connect")
 def on_connect():
@@ -307,11 +332,13 @@ def handle_reboot():
 @socketio.on("calibrate")
 def handle_calibrate(data):
     cal_type = data.get("type", "")
+    confirm = data.get("confirm", False)
+    position = data.get("position", 0)
     with _connection_lock:
         if not (_connection and _connection.running):
             emit("log", {"message": "Not connected", "level": "warning"})
             return
-        _connection.calibrate(cal_type)
+        _connection.calibrate(cal_type, confirm=confirm, position=position)
 
 
 @socketio.on("param_request")

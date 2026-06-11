@@ -68,6 +68,11 @@
               <span class="cal-btn-label">Compass</span>
               <span class="cal-btn-desc">Magnetometer calibration</span>
             </button>
+            <button class="cal-btn" onclick="startCalibration('accel_simple')">
+              <span class="cal-btn-icon">&#9644;</span>
+              <span class="cal-btn-label">Simple Accel</span>
+              <span class="cal-btn-desc">Single-position level offsets (large vehicles)</span>
+            </button>
             <button class="cal-btn" onclick="startCalibration('level')">
               <span class="cal-btn-icon">&#9644;</span>
               <span class="cal-btn-label">Level Horizon</span>
@@ -84,6 +89,11 @@
               <span class="cal-btn-desc">Barometer calibration</span>
             </button>
           </div>
+          <hr style="border-color:#1e293b;margin:16px 0">
+          <h2 style="font-size:13px;font-weight:700;color:#e2e8f0;margin:0 0 8px">Vehicle</h2>
+          <button class="action-btn warning" onclick="rebootFcu()" style="width:100%;margin-bottom:8px">&#x21bb; Reboot Autopilot</button>
+          <button class="action-btn" onclick="enableCompassLearn()" style="width:100%;margin-bottom:8px">&#x26C5; Enable Compass Learn (COMPASS_LEARN=2)</button>
+          <p style="font-size:10px;color:#64748b;margin:6px 0 0">Sends a reboot command to the flight controller. Reconnect is automatic.</p>
         </div>
       </div>
     </div>
@@ -108,10 +118,19 @@
       </div>
       <div id="calBody" class="cal-body">
         <div id="calInstruction" class="cal-instruction">Preparing calibration...</div>
+        <div id="calMagCompasses" class="cal-mag-compasses hidden">
+          <div class="cal-mag-header">Compass Progress</div>
+          <div id="calMagBars" class="cal-mag-bars"></div>
+        </div>
         <div id="calProgress" class="cal-progress">
           <div id="calProgressBar" class="cal-progress-bar"></div>
         </div>
         <div id="calStatus" class="cal-status"></div>
+        <div id="calResult" class="cal-result hidden">
+          <div id="calResultText"></div>
+          <div id="calResultOffsets" class="cal-offsets"></div>
+          <button id="calRebootBtn" class="action-btn warning hidden" onclick="rebootAfterCal()">Reboot Autopilot</button>
+        </div>
       </div>
       <div class="cal-modal-footer">
         <button id="calAbortBtn" class="action-btn danger" onclick="abortCalibration()">Abort</button>
@@ -122,6 +141,6 @@
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="/static/js/toolbar.js?v=11"></script>
-  <script src="/static/js/app.js?v=11"></script>
+  <script src="/static/js/app.js?v=13"></script>
 </body>
 </html>
