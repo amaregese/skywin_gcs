@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - RC Override</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=17" />
+  <style>
+    body { overflow: hidden; }
+    #main { flex-direction: column; }
+
+    .rco-wrap { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; gap: 20px; }
+
+    .rco-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .rco-right { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+
+    .rco-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px; overflow: hidden;
+    }
+    .rco-card-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px; background: #252f3f;
+      border-bottom: 1px solid #334155;
+    }
+    .rco-card-header .icon { font-size: 16px; }
+    .rco-card-header .title { color: #e2e8f0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
+    .rco-card-header .sub { color: #64748b; font-size: 11px; margin-left: auto; }
+    .rco-card-body { padding: 14px 16px; }
+
+    /* Channel list */
+    .rco-ch-list { display: flex; flex-direction: column; gap: 2px; }
+    .rco-ch-row {
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+      border-radius: 6px; transition: background 0.1s;
+    }
+    .rco-ch-row:hover { background: rgba(51,65,85,0.2); }
+    .rco-ch-row.active { background: rgba(234,179,8,0.06); }
+    .rco-ch-num {
+      font-size: 10px; font-weight: 800; color: #a5b4fc;
+      width: 24px; text-align: right; flex-shrink: 0;
+    }
+    .rco-ch-name {
+      font-size: 9px; font-weight: 600; color: #64748b;
+      width: 36px; flex-shrink: 0; text-transform: uppercase;
+    }
+    .rco-ch-slider {
+      flex: 1; height: 5px; -webkit-appearance: none; appearance: none;
+      background: #0f172a; border-radius: 3px; outline: none; cursor: pointer;
+    }
+    .rco-ch-slider::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: #6366f1; border: 2px solid #818cf8; cursor: pointer;
+      box-shadow: 0 0 6px rgba(99,102,241,0.3); transition: all 0.12s;
+    }
+    .rco-ch-slider::-moz-range-thumb {
+      width: 16px; height: 16px; border-radius: 50%;
+      background: #6366f1; border: 2px solid #818cf8; cursor: pointer;
+    }
+    .rco-ch-slider.active { background: #1e293b; }
+    .rco-ch-slider.active::-webkit-slider-thumb { background: #eab308; border-color: #facc15; box-shadow: 0 0 10px rgba(234,179,8,0.3); }
+    .rco-ch-slider.active::-moz-range-thumb { background: #eab308; border-color: #facc15; }
+    .rco-ch-input {
+      width: 48px; background: #0f172a; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 4px;
+      padding: 4px 4px; font-size: 11px; font-weight: 700; outline: none;
+      font-family: 'SF Mono','Consolas','JetBrains Mono',monospace;
+      text-align: center;
+    }
+    .rco-ch-input:focus { border-color: #6366f1; background: #0f172a; }
+    .rco-ch-reset {
+      font-size: 10px; color: #475569; cursor: pointer; padding: 2px 5px;
+      border-radius: 3px; background: none; border: 1px solid transparent;
+      transition: all 0.12s;
+    }
+    .rco-ch-reset:hover { color: #ef4444; background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.2); }
+    .rco-ch-monitor {
+      font-size: 9px; font-weight: 600; color: #475569;
+      width: 36px; text-align: center; flex-shrink: 0;
+      font-family: 'SF Mono','Consolas','JetBrains Mono',monospace;
+    }
+    .rco-ch-monitor.active { color: #22c55e; }
+    .rco-ch-bar {
+      width: 4px; height: 20px; border-radius: 2px;
+      background: #1e293b; flex-shrink: 0; transition: all 0.15s; position: relative;
+      overflow: hidden;
+    }
+    .rco-ch-bar-fill {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      background: #6366f1; border-radius: 2px; transition: height 0.1s;
+    }
+    .rco-ch-bar-fill.active { background: #eab308; }
+
+    /* Master toggle */
+    .rco-master {
+      display: flex; align-items: center; gap: 10px; padding: 4px 0;
+    }
+    .rco-toggle {
+      position: relative; width: 40px; height: 22px; flex-shrink: 0;
+      background: #334155; border-radius: 11px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .rco-toggle.active { background: #6366f1; }
+    .rco-toggle-knob {
+      position: absolute; top: 2px; left: 2px; width: 18px; height: 18px;
+      border-radius: 50%; background: #e2e8f0; transition: all 0.2s;
+    }
+    .rco-toggle.active .rco-toggle-knob { left: 20px; background: #fff; }
+    .rco-toggle-label { font-size: 12px; font-weight: 700; color: #e2e8f0; }
+    .rco-toggle-sub { font-size: 10px; color: #64748b; }
+
+    /* Presets */
+    .rco-preset-row { display: flex; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+    .rco-preset-btn {
+      padding: 5px 10px; border-radius: 5px; border: 1px solid #334155;
+      background: #0f172a; color: #94a3b8; font-size: 10px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s;
+    }
+    .rco-preset-btn:hover { border-color: #6366f1; color: #a5b4fc; background: rgba(99,102,241,0.08); }
+    .rco-preset-btn.active { border-color: #6366f1; background: rgba(99,102,241,0.15); color: #a5b4fc; }
+    .rco-preset-save {
+      flex: 1; padding: 5px 10px; border-radius: 5px; border: 1px dashed #475569;
+      background: transparent; color: #64748b; font-size: 10px; font-weight: 600;
+      cursor: pointer; transition: all 0.12s; text-align: center;
+    }
+    .rco-preset-save:hover { border-color: #22c55e; color: #22c55e; }
+
+    /* Controls */
+    .rco-btn-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
+    .rco-btn {
+      border: none; border-radius: 8px; padding: 8px 14px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+      letter-spacing: 0.3px; transition: all 0.12s;
+    }
+    .rco-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .rco-btn-primary { background: #6366f1; color: #e0e7ff; }
+    .rco-btn-primary:hover:not(:disabled) { background: #4f46e5; }
+    .rco-btn-danger { background: #ef4444; color: #fff; }
+    .rco-btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .rco-btn-warning { background: #eab308; color: #422006; }
+    .rco-btn-warning:hover:not(:disabled) { background: #d97706; }
+    .rco-btn-secondary { background: #334155; color: #94a3b8; }
+    .rco-btn-secondary:hover:not(:disabled) { background: #475569; color: #e2e8f0; }
+
+    .rco-status-box {
+      padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
+      text-align: center; letter-spacing: 0.5px; transition: all 0.15s;
+    }
+    .rco-status-box.idle { background: #0f172a; color: #64748b; border: 1px solid #334155; }
+    .rco-status-box.active { background: rgba(234,179,8,0.12); color: #eab308; border: 1px solid rgba(234,179,8,0.25); }
+    .rco-status-box.success { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
+    .rco-status-box.disabled { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.15); }
+
+    .rco-safety {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; border-radius: 8px; font-size: 11px;
+    }
+    .rco-safety.warn { background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }
+    .rco-safety.ok { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+    .rco-safety.danger { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+    .rco-safety-icon { font-size: 14px; flex-shrink: 0; }
+
+    .rco-log {
+      flex: 1; min-height: 0; overflow-y: auto;
+      font-family: 'SF Mono','Consolas','JetBrains Mono',monospace;
+      font-size: 10px; line-height: 1.6; color: #94a3b8; max-height: 180px;
+    }
+    .rco-log-entry { padding: 3px 14px; display: flex; gap: 8px; align-items: flex-start; }
+    .rco-log-entry:hover { background: rgba(51,65,85,0.15); }
+    .rco-log-time { color: #475569; flex-shrink: 0; }
+    .rco-log-msg { flex: 1; min-width: 0; word-break: break-word; }
+    .rco-log-msg.info { color: #94a3b8; }
+    .rco-log-msg.success { color: #4ade80; }
+    .rco-log-msg.warning { color: #facc15; }
+    .rco-log-msg.error { color: #f87171; }
+    .rco-log-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 60px; color: #334155; font-size: 11px; font-style: italic;
+    }
+
+    .rco-info-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; }
+    .rco-info-row + .rco-info-row { border-top: 1px solid #1a2332; }
+    .rco-info-label { color: #64748b; font-size: 11px; font-weight: 600; width: 80px; flex-shrink: 0; }
+    .rco-info-val { color: #e2e8f0; font-size: 12px; font-weight: 500; }
+    .rco-info-val.warn { color: #eab308; }
+    .rco-info-val.good { color: #22c55e; }
+    .rco-info-val.danger { color: #ef4444; }
+
+    .rco-pulse {
+      animation: rcoPulse 1s ease-in-out infinite;
+    }
+    @keyframes rcoPulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .rco-channel-count { font-size: 9px; color: #64748b; padding: 2px 0; }
+
+    @media (max-width: 900px) {
+      .rco-wrap { flex-direction: column; }
+      .rco-right { width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topBar">
+      <img src="/logo.png" id="topLogo" alt="SWL">
+    </div>
+    <div id="toolbar">
+      <div class="tb-top">
+        <span class="tb-brand-acronym">
+          <svg viewBox="0 0 28 28" width="22" height="22" class="tb-brand-icon">
+            <defs>
+              <linearGradient id="gcsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+              <linearGradient id="gcsGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="none" stroke="url(#gcsGrad)" stroke-width="1.5" opacity="0.25"/>
+            <circle cx="14" cy="14" r="9" fill="none" stroke="url(#gcsGrad)" stroke-width="1.2" opacity="0.35"/>
+            <circle cx="14" cy="14" r="5" fill="none" stroke="url(#gcsGrad)" stroke-width="1" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2.5" fill="url(#gcsGrad)" opacity="0.8"/>
+            <line x1="14" y1="0" x2="14" y2="6" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="14" y1="22" x2="14" y2="28" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="0" y1="14" x2="6" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="22" y1="14" x2="28" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <path d="M8 5.5c-4 2.5-6 7-6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M20 5.5c4 2.5 6 7 6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M6 20c2 3 5 5 8 5s6-2 8-5" stroke="url(#gcsGrad)" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.25"/>
+          </svg>
+          SGC
+        </span>
+        <span class="tb-software-name">SKYWIN GROUND CONTROL STATION</span>
+      </div>
+      <div class="tb-sep-h"></div>
+      <div class="tb-bottom">
+        <button class="toolbar-back" onclick="location.href='/'" title="Back to Home">&#8592;</button>
+        <div id="tbHamburger" onclick="toggleToolbarMenu()">
+          <span></span><span></span><span></span>
+        </div>
+        <div id="tbMenu">
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📁</span> FILE</div>
+          <button class="tb-menu-btn" onclick="menuAction('New Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📄</span> New Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Open Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📂</span> Open Mission...</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission As');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission As...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📤</span> Export Log...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Exit');toggleToolbarMenu()"><span class="tb-menu-btn-icon">🚪</span> Exit</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">🗺️</span> FLIGHT PLAN</div>
+          <button class="tb-menu-btn" onclick="location.href='/plan'"><span class="tb-menu-btn-icon">✈️</span> Waypoints</button>
+          <button class="tb-menu-btn" onclick="location.href='/survey'"><span class="tb-menu-btn-icon">📡</span> Survey Grid</button>
+          <button class="tb-menu-btn" onclick="location.href='/fence'"><span class="tb-menu-btn-icon">🛡️</span> Geo-Fence</button>
+          <button class="tb-menu-btn" onclick="location.href='/rally'"><span class="tb-menu-btn-icon">📍</span> Rally Points</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">⚙️</span> CONFIG</div>
+          <button class="tb-menu-btn" onclick="location.href='/config'"><span class="tb-menu-btn-icon">🔧</span> Calibration</button>
+          <button class="tb-menu-btn" onclick="location.href='/params'"><span class="tb-menu-btn-icon">📋</span> Full Parameters</button>
+          <button class="tb-menu-btn" onclick="location.href='/tuning'"><span class="tb-menu-btn-icon">🎛️</span> Tuning</button>
+          <button class="tb-menu-btn" onclick="location.href='/motor_test'"><span class="tb-menu-btn-icon">🔄</span> Motor Test</button>
+          <button class="tb-menu-btn" onclick="location.href='/rc_override'"><span class="tb-menu-btn-icon">🎮</span> RC Override</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()"><span class="tb-menu-btn-icon">⚙️</span> App Settings...</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📋</span> LOGS</div>
+          <button class="tb-menu-btn" onclick="menuAction('Telemetry Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📊</span> Telemetry Logs</button>
+          <button class="tb-menu-btn" onclick="menuAction('DataFlash Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📀</span> DataFlash Logs</button>
+          <button class="tb-menu-btn" onclick="toggleConsole();toggleToolbarMenu()"><span class="tb-menu-btn-icon">💻</span> Console</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">❓</span> HELP</div>
+          <button class="tb-menu-btn" onclick="menuAction('About');toggleToolbarMenu()"><span class="tb-menu-btn-icon">ℹ️</span> About SGC</button>
+        </div>
+        <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
+        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; DATA LOG</button>
+      </div>
+    </div>
+
+    <div id="main">
+      <div class="rco-wrap">
+        <div class="rco-left">
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x1F9F0;</span>
+              <span class="title">Channel Overrides</span>
+              <span class="sub">Set PWM values to override RC receiver input</span>
+            </div>
+            <div class="rco-card-body" style="padding:10px 16px">
+              <div class="rco-channel-count" id="activeChannelCount">No active overrides</div>
+              <div class="rco-ch-list" id="rcoChannelList"></div>
+            </div>
+          </div>
+
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x1F4C4;</span>
+              <span class="title">Overrides Log</span>
+              <span class="sub"><button class="rco-btn" style="padding:3px 10px;font-size:10px;border-radius:4px;background:transparent;border:1px solid #475569;color:#94a3b8;cursor:pointer" onclick="clearRcoLog()">Clear</button></span>
+            </div>
+            <div class="rco-card-body" style="padding:0">
+              <div id="rcoLog" class="rco-log">
+                <div class="rco-log-empty">RC override events will appear here</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rco-right">
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x2699;</span>
+              <span class="title">Override Controls</span>
+            </div>
+            <div class="rco-card-body">
+              <div class="rco-master">
+                <div id="rcoMasterToggle" class="rco-toggle" onclick="toggleRcoMaster()">
+                  <div class="rco-toggle-knob"></div>
+                </div>
+                <div>
+                  <div class="rco-toggle-label">Master Override</div>
+                  <div class="rco-toggle-sub" id="rcoMasterSub">Disabled — no overrides sent</div>
+                </div>
+              </div>
+
+              <div style="margin-top:10px">
+                <div class="rco-btn-row">
+                  <button class="rco-btn rco-btn-secondary" onclick="neutralAllChannels()" title="Set all channels to 1500 (neutral)">&#x21BA; Neutral All</button>
+                  <button class="rco-btn rco-btn-danger" onclick="clearAllOverrides()" title="Release all channels back to RC receiver">&#x2716; Clear All</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x1F4CB;</span>
+              <span class="title">Presets</span>
+              <span class="sub" id="rcoPresetName">None loaded</span>
+            </div>
+            <div class="rco-card-body">
+              <div class="rco-preset-row" id="rcoPresetList"></div>
+              <div class="rco-btn-row">
+                <button class="rco-btn rco-btn-primary" onclick="saveRcoPreset()" style="flex:1">&#x1F4BE; Save Current</button>
+                <button class="rco-btn rco-btn-secondary" onclick="deleteRcoPreset()" style="flex:1">&#x1F5D1; Delete</button>
+              </div>
+              <div style="margin-top:8px;display:flex;gap:6px">
+                <input id="rcoPresetNameInput" class="rco-ch-input" style="flex:1;width:auto" type="text" placeholder="Preset name..." maxlength="20">
+                <button class="rco-btn rco-btn-warning" onclick="saveRcoPresetAs()" style="padding:6px 12px">Save As</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x2139;</span>
+              <span class="title">Status</span>
+            </div>
+            <div class="rco-card-body">
+              <div id="rcoStatusBox" class="rco-status-box idle">Idle — no channels being overridden</div>
+              <div class="rco-info-row" style="margin-top:8px">
+                <span class="rco-info-label">Active Ch</span>
+                <span class="rco-info-val" id="rcoActiveChCount">0</span>
+              </div>
+              <div class="rco-info-row">
+                <span class="rco-info-label">Sent</span>
+                <span class="rco-info-val" id="rcoSentCount">0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rco-card">
+            <div class="rco-card-header">
+              <span class="icon">&#x26A0;</span>
+              <span class="title">Safety</span>
+            </div>
+            <div class="rco-card-body">
+              <div id="rcoSafetyConnected" class="rco-safety danger">
+                <span class="rco-safety-icon">&#x26A0;</span>
+                <span>Not connected to vehicle</span>
+              </div>
+              <div id="rcoSafetyArmed" class="rco-safety danger" style="margin-top:6px">
+                <span class="rco-safety-icon">&#x26A0;</span>
+                <span>Vehicle is armed — overrides disarmed only</span>
+              </div>
+              <div id="rcoSafetyOverride" class="rco-safety warn" style="margin-top:6px">
+                <span class="rco-safety-icon">&#x26A0;</span>
+                <span>Master override is OFF</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="notifContainer"></div>
+  <script src="/static/lib/socket.io.min.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.7.2/socket.io.min.js'"></script>
+  <script src="/static/js/toolbar.js?v=13"></script>
+  <script src="/static/js/rc_override.js?v=1"></script>
+</body>
+</html>

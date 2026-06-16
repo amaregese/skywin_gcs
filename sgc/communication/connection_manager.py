@@ -60,6 +60,7 @@ COMMAND_NAMES = {
     mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION: "CALIBRATION",
     mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN: "REBOOT",
     mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS: "ACCELCAL_VEHICLE_POS",
+    mavutil.mavlink.MAV_CMD_DO_MOTOR_TEST: "DO_MOTOR_TEST",
 }
 
 CMD_RESULTS = {0: "Accepted", 1: "Temp Reject", 2: "Denied", 3: "Unsupported",
@@ -82,6 +83,9 @@ PARAM_TYPES = {
 
 class MAVLinkConnection:
     def __init__(self, connection_string, baud=57600, source_system=255):
+        # Normalize Windows COM ports (COM10+ need \\.\ prefix for os.path.exists and pymavlink)
+        if os.name == "nt" and connection_string.startswith("COM") and not connection_string.startswith("\\\\.\\"):
+            connection_string = "\\\\.\\" + connection_string
         self.connection_string = connection_string
         self.baud = baud
         self.source_system = source_system
@@ -163,8 +167,9 @@ class MAVLinkConnection:
             finally:
                 s.close()
 
-        elif cs.startswith("/dev/") or cs.startswith("COM"):
-            if not os.path.exists(cs):
+        elif cs.startswith("/dev/") or cs.startswith("COM") or cs.startswith("\\\\.\\"):
+            probe_path = ("\\\\.\\" + cs) if (cs.startswith("COM") and os.name == "nt") else cs
+            if not os.path.exists(probe_path):
                 self._emit("log", {"message": f"Probe: serial device {cs} not found", "level": "error"})
                 return False
             self._emit("log", {"message": f"Probe: serial device {cs} exists", "level": "info"})
@@ -818,6 +823,56 @@ class MAVLinkConnection:
 
     def disarm(self):
         return self.send_command(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0)
+
+    def motor_test(self, motor, test_type=0, throttle=0, timeout=3):
+        if not self.master or not self.running:
+            return False
+        try:
+            from pymavlink.dialects.v20.ardupilotmega import MAV_CMD_DO_MOTOR_TEST
+            result = self.send_command(
+                MAV_CMD_DO_MOTOR_TEST,
+                param1=max(1, motor),
+                param2=test_type,
+                param3=max(0, min(100, throttle)),
+                param4=max(0, timeout),
+            )
+            if result:
+                self._emit("log", {
+                    "message": f"Motor test: motor={motor} type={test_type} thr={throttle}% time={timeout}s",
+                    "level": "info",
+                })
+            return result
+        except Exception as e:
+            self._emit("log", {"message": f"Motor test failed: {e}", "level": "error"})
+            return False
+
+    def rc_override(self, channels):
+        if not self.master or not self.running:
+            return False
+        try:
+            if not isinstance(channels, dict):
+                self._emit("log", {"message": "RC override: invalid channels data", "level": "error"})
+                return False
+            ch = [0] * 18
+            for i in range(1, 19):
+                val = channels.get(f"ch{i}")
+                if val is None:
+                    ch[i - 1] = 0
+                else:
+                    ch[i - 1] = max(0, min(2100, int(val)))
+            self.master.mav.rc_channels_override_send(
+                self.master.target_system,
+                self.master.target_component,
+                *ch[:8]
+            )
+            self._emit("log", {
+                "message": f"RC override: ch1={ch[0]} ch2={ch[1]} ch3={ch[2]} ch4={ch[3]} ch5={ch[4]} ch6={ch[5]} ch7={ch[6]} ch8={ch[7]}",
+                "level": "info",
+            })
+            return True
+        except Exception as e:
+            self._emit("log", {"message": f"RC override failed: {e}", "level": "error"})
+            return False
 
     def rtl(self):
         result = self.set_mode("RTL")

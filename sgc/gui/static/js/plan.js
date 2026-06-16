@@ -1,6 +1,7 @@
 const socket = io();
 let waypoints = [];
 let wpMarkers = [];
+let wpLine = null;
 let homePos = null;
 let homeMarker = null;
 let homeLine = null;
@@ -68,7 +69,7 @@ function initMap(lat, lon) {
   var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
   var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
 
-  osm.addTo(map);
+  sat.addTo(map);
 
   vehicleMarker = L.marker([lat, lon], {
     icon: L.divIcon({
@@ -138,7 +139,7 @@ function addWaypoint(lat, lon, alt, cmd) {
     command: cmd || 16, frame: 3,
     param1: 0, param2: 0, param3: 0, param4: 0,
   });
-  addMarker(idx);
+  updateMarkers();
   renderWaypoints();
   updateStatus();
 }
@@ -212,6 +213,7 @@ function updateMarkers() {
 
 function removeWaypoint(idx) {
   waypoints.splice(idx, 1);
+  waypoints.forEach((wp, i) => wp.seq = i);
   updateMarkers();
   renderWaypoints();
   updateStatus();
@@ -287,6 +289,7 @@ function editWp(idx) {
 function reverseMission() {
   if (waypoints.length < 2) { alert('Need at least 2 waypoints to reverse.'); return; }
   waypoints.reverse();
+  waypoints.forEach((wp, i) => wp.seq = i);
   selectedWp = -1;
   updateMarkers();
   renderWaypoints();

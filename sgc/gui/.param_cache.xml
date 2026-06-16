@@ -14599,7 +14599,7 @@
         <field name="UnitText">meters</field>
       </param>
       <param humanName="Altitude measurement noise (m)" name="EK3_ALT_M_NSE" documentation="This is the RMS value of noise in the altitude measurement. Increasing it reduces the weighting of the baro measurement and will make the filter respond more slowly to baro measurement errors, but will make it more sensitive to GPS and accelerometer errors. A larger value for EK3_ALT_M_NSE may be required when operating with EK3_SRCx_POSZ = 0. This parameter also sets the noise for the 'synthetic' zero height measurement that is used when EK3_SRCx_POSZ = 0." user="Advanced">
-        <field name="Range">0.1 100.0</field>
+        <field name="Range">0.01 100.0</field>
         <field name="Increment">0.1</field>
         <field name="Units">m</field>
         <field name="UnitText">meters</field>

@@ -64,6 +64,16 @@ def rally_page():
     return render_template("rally.html")
 
 
+@app.route("/motor_test")
+def motor_test_page():
+    return render_template("motor_test.html")
+
+
+@app.route("/rc_override")
+def rc_override_page():
+    return render_template("rc_override.html")
+
+
 @app.route("/survey")
 def survey_page():
     return render_template("survey.html")
@@ -179,7 +189,9 @@ def get_state():
 @app.route("/api/ports")
 def list_ports():
     try:
-        ports = MAVLinkConnection.detect_ports(baud=57600, timeout=2)
+        baud = request.args.get("baud", 57600, type=int)
+        timeout = request.args.get("timeout", 2, type=int)
+        ports = MAVLinkConnection.detect_ports(baud=baud, timeout=timeout)
         return jsonify(ports)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -315,6 +327,35 @@ def handle_command(data):
                 _connection.goto_position(lat, lon, alt)
         except Exception as e:
             _broadcast("log", {"message": f"Command error: {e}", "level": "error"})
+
+
+@socketio.on("motor_test")
+def handle_motor_test(data):
+    motor = data.get("motor", 1)
+    test_type = data.get("type", 0)
+    throttle = data.get("throttle", 0)
+    timeout = data.get("timeout", 3)
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        try:
+            _connection.motor_test(motor, test_type, throttle, timeout)
+        except Exception as e:
+            _broadcast("log", {"message": f"Motor test error: {e}", "level": "error"})
+
+
+@socketio.on("rc_override")
+def handle_rc_override(data):
+    channels = data.get("channels", {})
+    with _connection_lock:
+        if not (_connection and _connection.running):
+            emit("log", {"message": "Not connected", "level": "warning"})
+            return
+        try:
+            _connection.rc_override(channels)
+        except Exception as e:
+            _broadcast("log", {"message": f"RC override error: {e}", "level": "error"})
 
 
 @socketio.on("reboot_fcu")

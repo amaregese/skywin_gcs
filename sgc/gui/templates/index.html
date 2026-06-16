@@ -5,111 +5,116 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>SGC - Skywin Ground Control Station</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="/static/css/style.css?v=12" />
+  <link rel="stylesheet" href="/static/css/style.css?v=17" />
 </head>
 <body>
   <div id="app">
-    <nav id="menubar">
-      <div class="menu-item"><span>File</span>
-        <div class="menu-dropdown">
-          <div onclick="menuAction('New Mission')">New Mission</div>
-          <div onclick="menuAction('Open Mission')">Open Mission...</div>
-          <div onclick="menuAction('Save Mission')">Save Mission</div>
-          <div onclick="menuAction('Save Mission As')">Save Mission As...</div>
-          <hr/>
-          <div onclick="menuAction('Export Log')">Export Log...</div>
-          <hr/>
-          <div onclick="menuAction('Exit')">Exit</div>
-        </div>
-      </div>
-
-      <div class="menu-item"><span>Flight Plan</span>
-        <div class="menu-dropdown">
-          <div onclick="location.href='/plan'">Mission Planner</div>
-          <div onclick="location.href='/survey'">Auto WP &rarr; Grid</div>
-          <div onclick="location.href='/fence'">Geo-Fence Editor</div>
-          <div onclick="location.href='/rally'">Rally Points</div>
-        </div>
-      </div>
-      <div class="menu-item"><span>Config</span>
-        <div class="menu-dropdown">
-          <div onclick="menuAction('Vehicle Setup')">Vehicle Setup</div>
-          <div onclick="location.href='/config'">Calibration</div>
-          <div onclick="menuAction('Parameter Editor')">Parameter Editor</div>
-          <div onclick="location.href='/params'">Full Parameter List</div>
-          <hr/>
-          <div onclick="location.href='/tuning'">Basic Tuning</div>
-          <hr/>
-          <div onclick="menuAction('App Settings')">App Settings...</div>
-        </div>
-      </div>
-      <div class="menu-item"><span>Logs</span>
-        <div class="menu-dropdown">
-          <div onclick="menuAction('Telemetry Logs')">Telemetry Logs</div>
-          <div onclick="menuAction('DataFlash Logs')">DataFlash Logs</div>
-          <hr/>
-          <div onclick="toggleConsole()">Console</div>
-        </div>
-      </div>
-      <div class="menu-item"><span>Help</span>
-        <div class="menu-dropdown">
-          <div onclick="menuAction('About')">About SGC</div>
-        </div>
-      </div>
-      <div class="menu-title">SGC - Skywin Ground Control Station</div>
-    </nav>
-
-
+    
+    <div id="topBar">
+      <img src="/logo.png" id="topLogo" alt="SWL">
+    </div>
     <div id="toolbar">
-      <div id="tbHamburger" onclick="toggleToolbarMenu()">
-        <span></span><span></span><span></span>
+      <div class="tb-top">
+        <span class="tb-brand-acronym">
+          <svg viewBox="0 0 28 28" width="22" height="22" class="tb-brand-icon">
+            <defs>
+              <linearGradient id="gcsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+              <linearGradient id="gcsGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="none" stroke="url(#gcsGrad)" stroke-width="1.5" opacity="0.25"/>
+            <circle cx="14" cy="14" r="9" fill="none" stroke="url(#gcsGrad)" stroke-width="1.2" opacity="0.35"/>
+            <circle cx="14" cy="14" r="5" fill="none" stroke="url(#gcsGrad)" stroke-width="1" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2.5" fill="url(#gcsGrad)" opacity="0.8"/>
+            <line x1="14" y1="0" x2="14" y2="6" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="14" y1="22" x2="14" y2="28" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="0" y1="14" x2="6" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="22" y1="14" x2="28" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <path d="M8 5.5c-4 2.5-6 7-6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M20 5.5c4 2.5 6 7 6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M6 20c2 3 5 5 8 5s6-2 8-5" stroke="url(#gcsGrad)" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.25"/>
+          </svg>
+          SGC
+        </span>
+        <span class="tb-software-name">SKYWIN GROUND CONTROL STATION</span>
       </div>
-      <div id="tbMenu" class="hidden">
-        <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()">&#x1F4CB; Extract Log Pos</button>
-        <div class="tb-menu-sep"></div>
-        <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()">&#x2699; Settings</button>
+      <div class="tb-sep-h"></div>
+      <div class="tb-bottom">
+        <div id="tbHamburger" onclick="toggleToolbarMenu()">
+          <span></span><span></span><span></span>
+        </div>
+        <div id="tbMenu">
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📁</span> FILE</div>
+          <button class="tb-menu-btn" onclick="menuAction('New Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📄</span> New Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Open Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📂</span> Open Mission...</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission As');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission As...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📤</span> Export Log...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Exit');toggleToolbarMenu()"><span class="tb-menu-btn-icon">🚪</span> Exit</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">🗺️</span> FLIGHT PLAN</div>
+          <button class="tb-menu-btn" onclick="location.href='/plan'"><span class="tb-menu-btn-icon">✈️</span> Waypoints</button>
+          <button class="tb-menu-btn" onclick="location.href='/survey'"><span class="tb-menu-btn-icon">📡</span> Survey Grid</button>
+          <button class="tb-menu-btn" onclick="location.href='/fence'"><span class="tb-menu-btn-icon">🛡️</span> Geo-Fence</button>
+          <button class="tb-menu-btn" onclick="location.href='/rally'"><span class="tb-menu-btn-icon">📍</span> Rally Points</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">⚙️</span> CONFIG</div>
+          <button class="tb-menu-btn" onclick="location.href='/config'"><span class="tb-menu-btn-icon">🔧</span> Calibration</button>
+          <button class="tb-menu-btn" onclick="location.href='/params'"><span class="tb-menu-btn-icon">📋</span> Full Parameters</button>
+          <button class="tb-menu-btn" onclick="location.href='/tuning'"><span class="tb-menu-btn-icon">🎛️</span> Tuning</button>
+          <button class="tb-menu-btn" onclick="location.href='/motor_test'"><span class="tb-menu-btn-icon">🔄</span> Motor Test</button>
+          <button class="tb-menu-btn" onclick="location.href='/rc_override'"><span class="tb-menu-btn-icon">🎮</span> RC Override</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()"><span class="tb-menu-btn-icon">⚙️</span> App Settings...</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📋</span> LOGS</div>
+          <button class="tb-menu-btn" onclick="menuAction('Telemetry Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📊</span> Telemetry Logs</button>
+          <button class="tb-menu-btn" onclick="menuAction('DataFlash Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📀</span> DataFlash Logs</button>
+          <button class="tb-menu-btn" onclick="toggleConsole();toggleToolbarMenu()"><span class="tb-menu-btn-icon">💻</span> Console</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">❓</span> HELP</div>
+          <button class="tb-menu-btn" onclick="menuAction('About');toggleToolbarMenu()"><span class="tb-menu-btn-icon">ℹ️</span> About SGC</button>
+        </div>
+        <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
+        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; DATA LOG</button>
       </div>
-      <div class="tb-brand">
-        <svg class="tb-brand-icon" viewBox="0 0 24 24" width="18" height="18">
-          <defs><linearGradient id="brandGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>
-          <path d="M12 2L3 7v5c0 5.25 3.83 10.15 9 11 5.17-.85 9-5.75 9-11V7l-9-5z" fill="url(#brandGrad)" opacity="0.9"/>
-          <path d="M12 4.5L5.5 8.5v3.5c0 4.2 3 8.1 6.5 8.8 3.5-.7 6.5-4.6 6.5-8.8V8.5L12 4.5z" fill="#1e293b"/>
-          <text x="12" y="16" text-anchor="middle" fill="#818cf8" font-size="9" font-weight="800" font-family="system-ui">S</text>
-        </svg>
-        <span class="tb-brand-name">SGC</span>
-        <span class="tb-brand-ver">V1.0.2</span>
-      </div>
-      <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
-      <div class="tb-group">
-        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; LOG</button>
-        <button id="measureBtn" class="tb-btn" onclick="toggleMeasure()">&#x1F4D0; Measure</button>
-        <button id="missionBtn" class="tb-btn" onclick="toggleMissionPanel()">&#x2708; Mission</button>
-        <button id="brgBtn" class="tb-btn" onclick="toggleBrgPanel()">&#x1F9ED; Bearing WP</button>
-        <button id="dmsBtn" class="tb-btn" onclick="toggleDmsPanel()">&#x1F310; DMS</button>
-        <button id="fenceBtn" class="tb-btn" onclick="toggleFencePanel()">&#x26F0; Fence</button>
-      </div>
-      <div style="flex:1"></div>
-      <img src="/static/swl.png" id="topLogo" alt="SWL">
     </div>
 
     <div id="main">
       <div id="sidebar">
+        <div id="missionBtn" class="sidebar-btn" onclick="toggleMissionPanel()" title="Mission">
+          <span class="sidebar-btn-icon">&#x2708;</span>
+          <span class="sidebar-btn-label">MISSION</span>
+        </div>
+        <div id="fenceBtn" class="sidebar-btn" onclick="toggleFencePanel()" title="Geo-Fence">
+          <span class="sidebar-btn-icon">&#x26F0;</span>
+          <span class="sidebar-btn-label">FENCE</span>
+        </div>
+        <div id="brgBtn" class="sidebar-btn" onclick="toggleBrgPanel()" title="Bearing">
+          <span class="sidebar-btn-icon">&#x1F9ED;</span>
+          <span class="sidebar-btn-label">BEARING</span>
+        </div>
+        <div id="measureBtn" class="sidebar-btn" onclick="toggleMeasure()" title="Ruler">
+          <span class="sidebar-btn-icon">&#x1F4D0;</span>
+          <span class="sidebar-btn-label">RULER</span>
+        </div>
+        <div class="sidebar-sep"></div>
         <div class="sidebar-btn active" data-tab="telemetry" onclick="switchSidebarTab('telemetry')" title="Telemetry">
           <span class="sidebar-btn-icon">&#x1F4E1;</span>
-          <span class="sidebar-btn-label">DATA</span>
+          <span class="sidebar-btn-label">TELEMETRY</span>
         </div>
         <div class="sidebar-btn" data-tab="charts" onclick="switchSidebarTab('charts')" title="Charts">
           <span class="sidebar-btn-icon">&#x1F4C8;</span>
-          <span class="sidebar-btn-label">CHART</span>
+          <span class="sidebar-btn-label">CHARTS</span>
         </div>
-        <div class="sidebar-btn" data-tab="inspector" onclick="switchSidebarTab('inspector')" title="Inspector">
-          <span class="sidebar-btn-icon">&#x1F50D;</span>
-          <span class="sidebar-btn-label">LOG</span>
-        </div>
-        <div class="sidebar-sep"></div>
         <div class="sidebar-btn" data-tab="health" onclick="switchSidebarTab('health')" title="Health">
           <span class="sidebar-btn-icon">&#x2665;</span>
           <span class="sidebar-btn-label">HEALTH</span>
+        </div>
+        <div class="sidebar-btn" data-tab="inspector" onclick="switchSidebarTab('inspector')" title="Inspector">
+          <span class="sidebar-btn-icon">&#x1F50D;</span>
+          <span class="sidebar-btn-label">INSPECTOR</span>
         </div>
         <div class="sidebar-btn" data-tab="stats" onclick="switchSidebarTab('stats')" title="Stats">
           <span class="sidebar-btn-icon">&#x2261;</span>
@@ -118,12 +123,26 @@
         <div class="sidebar-sep"></div>
         <div class="sidebar-btn" data-tab="targets" onclick="switchSidebarTab('targets')" title="Targets">
           <span class="sidebar-btn-icon">&#x1F3AF;</span>
-          <span class="sidebar-btn-label">TARGET</span>
+          <span class="sidebar-btn-label">TARGETS</span>
+        </div>
+        <div id="dmsBtn" class="sidebar-btn" onclick="toggleDmsPanel()" title="Coord">
+          <span class="sidebar-btn-icon">&#x1F310;</span>
+          <span class="sidebar-btn-label">COORD</span>
         </div>
         <div class="sidebar-sep"></div>
         <div class="sidebar-btn" data-tab="camera" onclick="switchSidebarTab('camera')" title="Camera">
           <span class="sidebar-btn-icon">&#x1F4F7;</span>
           <span class="sidebar-btn-label">CAMERA</span>
+        </div>
+        <div class="sidebar-sep"></div>
+        <div class="sidebar-btn" data-tab="prearm" onclick="switchSidebarTab('prearm')" title="Pre-arm Checklist">
+          <span class="sidebar-btn-icon">&#x2714;</span>
+          <span class="sidebar-btn-label">PRE-ARM</span>
+        </div>
+        <div class="sidebar-sep"></div>
+        <div class="sidebar-btn" onclick="location.href='/motor_test'" title="Motor Test">
+          <span class="sidebar-btn-icon">&#x2699;</span>
+          <span class="sidebar-btn-label">MOTOR</span>
         </div>
       </div>
 
@@ -199,136 +218,155 @@
           </div>
 
         </div>
-        <div id="measureInfo" class="measure-info hidden">
-          <div class="measure-info-header">&#9751; Measuring</div>
-          <div class="measure-info-body">
-            <div class="measure-info-row">
-              <span class="measure-info-label">Distance</span>
-              <span class="measure-info-val" id="measureDist">---</span>
-            </div>
-            <div class="measure-info-row">
-              <span class="measure-info-label">Bearing</span>
-              <span class="measure-info-val" id="measureBearing">---</span>
-            </div>
+        <div id="measureInfo" class="side-card hidden">
+          <div class="side-card-header" onclick="stopMeasuring()">
+            <span>&#9751; Measuring</span>
+            <span class="side-card-close">&times;</span>
           </div>
-          <div class="measure-units" id="measureUnits">
-            <button class="measure-unit active" data-unit="m">m</button>
-            <button class="measure-unit" data-unit="cm">cm</button>
-            <button class="measure-unit" data-unit="km">km</button>
-            <span class="measure-unit-sep"></span>
-            <button class="measure-unit" data-unit="in">in</button>
-            <button class="measure-unit" data-unit="ft">ft</button>
-          </div>
-        </div>
-        <div id="missionPanel" class="mission-info hidden">
-          <div class="mission-info-header">&#9992; Mission Control</div>
-          <div class="mission-info-body">
-            <div class="mission-info-row">
-              <span class="mission-info-label">Current WP</span>
-              <span class="mission-info-val" id="missionCurrentWp">-- / --</span>
+          <div class="side-card-body">
+            <div class="data-row">
+              <span class="data-label">Distance</span>
+              <span class="data-value" id="measureDist">---</span>
             </div>
-            <div class="mission-info-row">
-              <span class="mission-info-label">Dist to Next</span>
-              <span class="mission-info-val" id="missionDistNext">-- m</span>
+            <div class="data-row">
+              <span class="data-label">Bearing</span>
+              <span class="data-value" id="measureBearing">---</span>
             </div>
-            <hr class="mission-sep">
-            <div class="mission-info-row">
-              <span class="mission-info-label">Mode</span>
-              <span class="mission-info-val" id="missionMode">---</span>
-            </div>
-            <div class="mission-info-row">
-              <span class="mission-info-label">Altitude</span>
-              <span class="mission-info-val" id="missionAlt">0.0 m</span>
-            </div>
-            <div class="mission-info-row">
-              <span class="mission-info-label">Speed</span>
-              <span class="mission-info-val" id="missionSpeed">0.0 m/s</span>
-            </div>
-            <div class="mission-info-row">
-              <span class="mission-info-label">Battery</span>
-              <span class="mission-info-val" id="missionBatt">--%</span>
-            </div>
-            <hr class="mission-sep">
-          </div>
-          <div class="mission-controls">
-            <button class="mission-btn" onclick="socket.emit('set_mode',{mode:'LOITER'});log('Mission paused (LOITER)','info')">Pause</button>
-            <button class="mission-btn" onclick="socket.emit('set_mode',{mode:'AUTO'});log('Mission resumed (AUTO)','info')">Resume</button>
-            <button class="mission-btn mission-btn-warn" onclick="socket.emit('set_mode',{mode:'RTL'});log('RTL','info')">RTL</button>
-            <button class="mission-btn mission-btn-danger" onclick="socket.emit('set_mode',{mode:'LAND'});log('LAND','info')">LAND</button>
-          </div>
-        </div>
-        <div id="brgPanel" class="brg-info hidden">
-          <div class="brg-info-header">&#9783; Add WP by Bearing &amp; Distance</div>
-          <div class="brg-info-body">
-            <div class="brg-row">
-              <span class="brg-label">Bearing (&deg;)</span>
-              <input type="number" id="brgAngle" class="brg-input" value="90" min="0" max="360" step="1">
-            </div>
-            <div class="brg-row">
-              <span class="brg-label">Distance (m)</span>
-              <input type="number" id="brgDist" class="brg-input" value="100" min="0" step="1">
-            </div>
-            <hr class="brg-sep">
-            <div class="brg-label" style="margin-bottom:2px">Reference:</div>
-            <div class="brg-radio-row">
-              <label class="brg-radio"><input type="radio" name="brgRef" value="aircraft" checked> Aircraft</label>
-              <label class="brg-radio"><input type="radio" name="brgRef" value="wp"> Current WP</label>
-            </div>
-            <button class="brg-add-btn" onclick="addBrgWaypoint()">+ Add Waypoint</button>
-          </div>
-        </div>
-        <div id="dmsPanel" class="dms-info hidden">
-          <div class="dms-info-header">&#9730; DMS Conversion Tool</div>
-          <div class="dms-info-body">
-            <div class="dms-section">
-              <div class="dms-section-title">Decimal &rarr; DMS</div>
-              <div class="dms-row">
-                <span class="dms-label">Lat</span>
-                <input type="number" id="dmsDdLat" class="dms-input" value="32.0347969" step="any">
-              </div>
-              <div class="dms-row">
-                <span class="dms-label">Lon</span>
-                <input type="number" id="dmsDdLon" class="dms-input" value="118.8134989" step="any">
-              </div>
-              <button class="dms-btn" onclick="convertToDms()">&rarr; Convert to DMS</button>
-              <div class="dms-result" id="dmsResultDms">Lat: -- | Lon: --</div>
-            </div>
-            <hr class="dms-sep">
-            <div class="dms-section">
-              <div class="dms-section-title">DMS &rarr; Decimal</div>
-              <div class="dms-row">
-                <span class="dms-label">Lat</span>
-                <input type="number" id="dmsDmsLatDeg" class="dms-input-sm" value="32" placeholder="&#176;">
-                <input type="number" id="dmsDmsLatMin" class="dms-input-sm" value="2" placeholder="&#39;">
-                <input type="number" id="dmsDmsLatSec" class="dms-input-sm" value="5.269" placeholder="&#34;" step="any">
-              </div>
-              <div class="dms-row">
-                <span class="dms-label">Lon</span>
-                <input type="number" id="dmsDmsLonDeg" class="dms-input-sm" value="118" placeholder="&#176;">
-                <input type="number" id="dmsDmsLonMin" class="dms-input-sm" value="48" placeholder="&#39;">
-                <input type="number" id="dmsDmsLonSec" class="dms-input-sm" value="48.596" placeholder="&#34;" step="any">
-              </div>
-              <button class="dms-btn" onclick="convertToDd()">&rarr; Convert to Decimal</button>
-              <div class="dms-result" id="dmsResultDd">Lat: -- | Lon: --</div>
+            <div class="measure-units" id="measureUnits">
+              <button class="measure-unit card-btn active" data-unit="m">m</button>
+              <button class="measure-unit card-btn" data-unit="cm">cm</button>
+              <button class="measure-unit card-btn" data-unit="km">km</button>
+              <span class="measure-unit-sep"></span>
+              <button class="measure-unit card-btn" data-unit="in">in</button>
+              <button class="measure-unit card-btn" data-unit="ft">ft</button>
             </div>
           </div>
         </div>
-        <div id="fencePanel" class="fence-info hidden">
-          <div class="fence-info-header">&#9916; Geofence</div>
-          <div class="fence-info-body">
-            <div class="fence-section-title">Polygon Fence</div>
-            <div id="fencePolyTable" class="fence-table"></div>
-            <button class="fence-btn-sm" onclick="addFencePolygon()">+ Add Polygon</button>
-            <hr class="fence-sep">
-            <div class="fence-section-title">Circle Fence</div>
-            <div id="fenceCircleTable" class="fence-table"></div>
-            <button class="fence-btn-sm" onclick="addFenceCircle()">+ Add Circle</button>
-            <hr class="fence-sep">
-            <div class="fence-actions">
-              <button class="fence-btn fence-btn-upload" onclick="uploadFence()">Upload All</button>
-              <button class="fence-btn fence-btn-danger" onclick="clearFence()">Clear</button>
+        <div id="missionPanel" class="side-card hidden">
+          <div class="side-card-header" onclick="toggleMissionPanel()">
+            <span>&#9992; Mission Control</span>
+            <span class="side-card-close">&times;</span>
+          </div>
+          <div class="side-card-body">
+            <div class="data-row">
+              <span class="data-label">Current WP</span>
+              <span class="data-value" id="missionCurrentWp">-- / --</span>
             </div>
-            <div id="fenceStatus" class="fence-status">No fence loaded</div>
+            <div class="data-row">
+              <span class="data-label">Dist to Next</span>
+              <span class="data-value" id="missionDistNext">-- m</span>
+            </div>
+            <div class="card-divider"></div>
+            <div class="data-row">
+              <span class="data-label">Mode</span>
+              <span class="data-value" id="missionMode">---</span>
+            </div>
+            <div class="data-row">
+              <span class="data-label">Altitude</span>
+              <span class="data-value" id="missionAlt">0.0 m</span>
+            </div>
+            <div class="data-row">
+              <span class="data-label">Speed</span>
+              <span class="data-value" id="missionSpeed">0.0 m/s</span>
+            </div>
+            <div class="data-row">
+              <span class="data-label">Battery</span>
+              <span class="data-value" id="missionBatt">--%</span>
+            </div>
+            <div class="card-divider"></div>
+            <div class="btn-group">
+              <button class="card-btn" onclick="socket.emit('set_mode',{mode:'LOITER'});log('Mission paused (LOITER)','info')">Pause</button>
+              <button class="card-btn card-btn-primary" onclick="socket.emit('set_mode',{mode:'AUTO'});log('Mission resumed (AUTO)','info')">Resume</button>
+              <button class="card-btn card-btn-warn" onclick="socket.emit('set_mode',{mode:'RTL'});log('RTL','info')">RTL</button>
+              <button class="card-btn card-btn-danger" onclick="socket.emit('set_mode',{mode:'LAND'});log('LAND','info')">LAND</button>
+            </div>
+          </div>
+        </div>
+        <div id="brgPanel" class="side-card hidden">
+          <div class="side-card-header" onclick="toggleBrgPanel()">
+            <span>&#9783; Add WP by Bearing</span>
+            <span class="side-card-close">&times;</span>
+          </div>
+          <div class="side-card-body">
+            <div class="data-row">
+              <span class="data-label">Bearing (&deg;)</span>
+              <input type="number" id="brgAngle" class="card-input" value="90" min="0" max="360" step="1">
+            </div>
+            <div class="data-row">
+              <span class="data-label">Distance (m)</span>
+              <input type="number" id="brgDist" class="card-input" value="100" min="0" step="1">
+            </div>
+            <div class="card-divider"></div>
+            <div class="data-label">Reference:</div>
+            <div class="radio-row">
+              <label class="card-radio"><input type="radio" name="brgRef" value="aircraft" checked> Aircraft</label>
+              <label class="card-radio"><input type="radio" name="brgRef" value="wp"> Current WP</label>
+            </div>
+            <button class="card-btn card-btn-primary" onclick="addBrgWaypoint()">+ Add Waypoint</button>
+          </div>
+        </div>
+        <div id="dmsPanel" class="side-card hidden">
+          <div class="side-card-header" onclick="toggleDmsPanel()">
+            <span>&#9730; Coordinate Conversion</span>
+            <span class="side-card-close">&times;</span>
+          </div>
+          <div class="side-card-body">
+            <div class="group-box">
+              <div class="group-box-title">Decimal &rarr; DMS</div>
+              <div class="data-row">
+                <span class="data-label">Lat</span>
+                <input type="number" id="dmsDdLat" class="card-input" value="32.0347969" step="any">
+              </div>
+              <div class="data-row">
+                <span class="data-label">Lon</span>
+                <input type="number" id="dmsDdLon" class="card-input" value="118.8134989" step="any">
+              </div>
+              <button class="card-btn card-btn-primary" onclick="convertToDms()">&rarr; Convert to DMS</button>
+              <div class="card-result" id="dmsResultDms">Lat: -- | Lon: --</div>
+            </div>
+            <div class="card-divider"></div>
+            <div class="group-box">
+              <div class="group-box-title">DMS &rarr; Decimal</div>
+              <div class="data-row">
+                <span class="data-label">Lat</span>
+                <input type="number" id="dmsDmsLatDeg" class="card-input-sm" value="32" placeholder="&#176;">
+                <input type="number" id="dmsDmsLatMin" class="card-input-sm" value="2" placeholder="&#39;">
+                <input type="number" id="dmsDmsLatSec" class="card-input-sm" value="5.269" placeholder="&#34;" step="any">
+              </div>
+              <div class="data-row">
+                <span class="data-label">Lon</span>
+                <input type="number" id="dmsDmsLonDeg" class="card-input-sm" value="118" placeholder="&#176;">
+                <input type="number" id="dmsDmsLonMin" class="card-input-sm" value="48" placeholder="&#39;">
+                <input type="number" id="dmsDmsLonSec" class="card-input-sm" value="48.596" placeholder="&#34;" step="any">
+              </div>
+              <button class="card-btn card-btn-primary" onclick="convertToDd()">&rarr; Convert to Decimal</button>
+              <div class="card-result" id="dmsResultDd">Lat: -- | Lon: --</div>
+            </div>
+          </div>
+        </div>
+        <div id="fencePanel" class="side-card hidden">
+          <div class="side-card-header" onclick="toggleFencePanel()">
+            <span>&#9916; Geofence</span>
+            <span class="side-card-close">&times;</span>
+          </div>
+          <div class="side-card-body">
+            <div class="group-box">
+              <div class="group-box-title">Polygon Fence</div>
+              <div id="fencePolyTable" class="fence-table"></div>
+              <button class="card-btn" onclick="addFencePolygon()">+ Add Polygon</button>
+            </div>
+            <div class="card-divider"></div>
+            <div class="group-box">
+              <div class="group-box-title">Circle Fence</div>
+              <div id="fenceCircleTable" class="fence-table"></div>
+              <button class="card-btn" onclick="addFenceCircle()">+ Add Circle</button>
+            </div>
+            <div class="card-divider"></div>
+            <div class="btn-group">
+              <button class="card-btn card-btn-primary" onclick="uploadFence()">Upload All</button>
+              <button class="card-btn card-btn-danger" onclick="clearFence()">Clear</button>
+            </div>
+            <div id="fenceStatus" class="card-result">No fence loaded</div>
           </div>
         </div>
 
@@ -457,7 +495,7 @@
                   <tr><td class="ekf-label">Vel</td><td class="ekf-label">Mag</td></tr>
                   <tr><td class="ekf-val" id="ekf_vel">---</td><td class="ekf-val" id="ekf_mag">---</td></tr>
                 </table>
-                <div style="margin-top:4px;font-size:9px;color:#475569">Flags: <span id="ekf_flags">---</span></div>
+                <div class="ekf-flags">Flags: <span id="ekf_flags">---</span></div>
               </div>
             </div>
           </div>
@@ -494,19 +532,19 @@
               <div class="group-content">
                 <div class="row">
                   <span class="row-label">Lat</span>
-                  <input type="number" id="targetLat" class="wp-edit" style="width:100px" step="any" placeholder="37.7749">
+                  <input type="number" id="targetLat" class="wp-edit" step="any" placeholder="37.7749">
                 </div>
                 <div class="row">
                   <span class="row-label">Lon</span>
-                  <input type="number" id="targetLon" class="wp-edit" style="width:100px" step="any" placeholder="-122.4194">
+                  <input type="number" id="targetLon" class="wp-edit" step="any" placeholder="-122.4194">
                 </div>
                 <div class="row">
                   <span class="row-label">Name</span>
-                  <input type="text" id="targetName" class="wp-edit" style="width:100px" placeholder="Target 1">
+                  <input type="text" id="targetName" class="wp-edit" placeholder="Target 1">
                 </div>
-                <div style="display:flex;gap:6px;margin-top:8px">
-                  <button id="targetSaveBtn" class="action-btn success" style="flex:1;font-size:11px;padding:6px" onclick="saveTarget()">+ ADD</button>
-                  <button id="targetCancelBtn" class="action-btn secondary hidden" style="font-size:11px;padding:6px" onclick="cancelEditTarget()">Cancel</button>
+                <div id="targetBtnRow">
+                  <button id="targetSaveBtn" class="card-btn card-btn-primary" onclick="saveTarget()">+ ADD</button>
+                  <button id="targetCancelBtn" class="card-btn hidden" onclick="cancelEditTarget()">Cancel</button>
                 </div>
               </div>
             </div>
@@ -522,7 +560,7 @@
             <span class="side-card-close">&times;</span>
             <span>&#x1F4F7; Camera Feed</span>
           </div>
-          <div class="side-card-body" style="padding:0;display:flex;flex-direction:column">
+          <div class="side-card-body">
             <div id="cameraFeed" class="camera-feed">
               <div id="cameraPlaceholder" class="camera-placeholder">
                 <span class="camera-placeholder-icon">&#x1F4F7;</span>
@@ -572,11 +610,13 @@
       </div>
 
       <div id="actionPanel">
-        <div id="actionPanelHeader">
-          <span class="action-panel-title">CONTROL</span>
-          <button id="collapseActionBtn" class="action-collapse-btn" onclick="toggleActionPanel()" title="Collapse panel">&#9658;</button>
+        <div id="collapseTab" onclick="toggleActionPanel()" title="Collapse panel">
+          <span id="collapseTabArrow">&#9658;</span>
         </div>
-        <div id="actionPanelBody" style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <div id="actionPanelBody">
+          <div id="actionPanelHeader">
+            <span class="action-panel-title">CONTROL</span>
+          </div>
           <div id="controlPanel">
             <div class="action-section">
               <div class="action-title">FLIGHT MODE</div>
@@ -595,26 +635,30 @@
             <div class="action-section">
               <div class="action-title">VEHICLE CONTROL</div>
               <div class="btn-row">
-                <button class="action-btn success" onclick="arm()">ARM</button>
-                <button class="action-btn danger" onclick="disarm()">DISARM</button>
+                <button id="btnArm" class="action-btn success" onclick="arm()">ARM</button>
+                <button id="btnDisarm" class="action-btn danger" onclick="disarm()">DISARM</button>
               </div>
-              <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
-              <button class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
-              <button class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
-              <button class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
+              <button id="btnRtl" class="action-btn warning" onclick="socket.emit('set_mode', {mode:'RTL'}); log('RTL command sent','info')">RTL</button>
+              <button id="btnLand" class="action-btn warning" onclick="socket.emit('set_mode', {mode:'LAND'}); log('LAND command sent','info')">LAND</button>
+              <button id="btnTakeoff" class="action-btn" onclick="takeoffPrompt()">TAKEOFF</button>
+              <button id="btnArmTakeoff" class="action-btn success" onclick="armTakeoff()">ARM & TAKEOFF</button>
             </div>
-          </div>
-          <div id="targetDistPanel" class="action-section hidden">
-            <div class="action-title" style="display:flex;justify-content:space-between;align-items:center">
+
+            <div id="targetDistPanel" class="action-section hidden">
+            <div class="action-title">
               <span>DESTINATIONS</span>
-              <span id="targetDistCount" style="color:#7c3aed;font-size:10px">0</span>
+              <span id="targetDistCount">0</span>
             </div>
             <div id="targetDistList"></div>
           </div>
-          <div id="rightConsole" style="margin-top:auto">
+          <div id="rightConsole">
             <div class="rc-header">
-              <span>CONSOLE</span>
-              <button id="consoleExpandBtn" onclick="toggleConsoleSize()" title="Expand to bottom panel">&#9650;</button>
+              <span class="rc-title">&#x1F4BB; CONSOLE</span>
+              <div class="rc-controls">
+                <span id="consoleBadge" class="rc-badge">0</span>
+                <button class="rc-btn" onclick="clearConsole()" title="Clear console">&times;</button>
+                <button id="consoleExpandBtn" class="rc-btn" onclick="toggleConsoleSize()" title="Expand to bottom panel">&#x26F6;</button>
+              </div>
             </div>
             <div id="consoleOutput"></div>
           </div>
@@ -624,6 +668,8 @@
 
     <div id="mapContextMenu" class="context-menu hidden">
       <div onclick="flyToHere()">Fly to here</div>
+      <div id="ctxClearFly" class="hidden" onclick="clearFlyTarget();document.getElementById('mapContextMenu').classList.add('hidden')">Clear Fly Target</div>
+      <div class="context-sep"></div>
       <div onclick="startMeasuring()">Start Measuring</div>
     </div>
 
@@ -650,12 +696,12 @@
     <div id="connDialog" class="conn-overlay hidden">
       <div class="conn-box">
         <div class="conn-header">
-          <span>&#x1F4E1; Connection</span>
+          <span><span class="conn-header-icon">&#x1F4E1;</span>Connection</span>
           <span class="conn-close" onclick="closeConnDialog()">&times;</span>
         </div>
         <div class="conn-body">
-          <div class="conn-row">
-            <label class="conn-label">Type</label>
+          <div class="conn-select-group">
+            <div class="conn-type-label">Interface Type</div>
             <select id="connType" class="conn-select" onchange="onConnTypeChange()">
               <option value="sitl">SITL (Simulation)</option>
               <option value="serial">Serial (FCU / Radio)</option>
@@ -663,24 +709,36 @@
               <option value="tcpsrv">TCP Server</option>
               <option value="udp">UDP</option>
             </select>
+            <span class="conn-select-arrow">&#x25BE;</span>
+          </div>
+          <div id="connSitlFields" class="conn-fields">
+            <div class="conn-sitl-info">
+              <span class="conn-sitl-icon">&#x2699;</span>
+              <span>Connects to ArduPilot SITL via UDP telemetry stream on port <strong style="color:#94a3b8">14550</strong>. Make sure SITL is running before connecting.</span>
+            </div>
           </div>
           <div id="connSerialFields" class="conn-fields hidden">
             <div class="conn-row">
               <label class="conn-label">Port</label>
-              <select id="connSerialPort" class="conn-select">
-                <option value="">-- Scan for ports --</option>
+              <select id="connSerialPort" class="conn-input">
+                <option value="">-- Scan for serial ports --</option>
               </select>
               <button class="conn-scan-btn" onclick="scanSerialPorts()">Scan</button>
             </div>
+            <div id="connSerialManualRow" class="conn-row" style="display:none">
+              <label class="conn-label">Manual</label>
+              <input id="connSerialManual" class="conn-input" type="text" placeholder="e.g. COM3" style="flex:1">
+              <button class="conn-scan-btn" onclick="useManualSerialPort()">Use</button>
+            </div>
             <div class="conn-row">
               <label class="conn-label">Baud</label>
-              <select id="connBaudSerial" class="conn-select">
-                <option value="57600">57600</option>
-                <option value="115200">115200</option>
-                <option value="38400">38400</option>
-                <option value="19200">19200</option>
-                <option value="9600">9600</option>
-                <option value="921600">921600</option>
+              <select id="connBaudSerial" class="conn-input">
+                <option value="57600">57,600</option>
+                <option value="115200">115,200</option>
+                <option value="38400">38,400</option>
+                <option value="19200">19,200</option>
+                <option value="9600">9,600</option>
+                <option value="921600">921,600</option>
               </select>
             </div>
           </div>
@@ -703,9 +761,9 @@
           <div id="connUdpFields" class="conn-fields hidden">
             <div class="conn-row">
               <label class="conn-label">Mode</label>
-              <select id="connUdpMode" class="conn-select">
-                <option value="in">Receive (in)</option>
-                <option value="out">Send (out)</option>
+              <select id="connUdpMode" class="conn-input">
+                <option value="in">Receive (inbound)</option>
+                <option value="out">Send (outbound)</option>
               </select>
             </div>
             <div class="conn-row">
@@ -713,33 +771,47 @@
               <input id="connUdpPort" class="conn-input" type="number" value="14550">
             </div>
             <div class="conn-row" id="connUdpAddrRow">
-              <label class="conn-label">Target Address</label>
+              <label class="conn-label">Target</label>
               <input id="connUdpAddr" class="conn-input" type="text" value="127.0.0.1">
             </div>
           </div>
-          <div id="connSitlFields" class="conn-fields">
-            <div class="conn-row">
-              <span style="color:#64748b;font-size:11px;line-height:1.4">
-                Connects to ArduPilot SITL via UDP telemetry stream.<br>
-                Make sure SITL is running before connecting.
-              </span>
-            </div>
-          </div>
           <div id="connPreview" class="conn-preview">
-            Connection string: <code id="connStringPreview">tcp:127.0.0.1:5760</code>
+            <span class="conn-preview-label">Conn String</span>
+            <code id="connStringPreview">tcp:127.0.0.1:5760</code>
           </div>
         </div>
         <div class="conn-actions">
           <button class="action-btn secondary" onclick="closeConnDialog()">Cancel</button>
           <button class="action-btn success" onclick="doConnect()">Connect</button>
         </div>
+          </div>
+        </div>
+        <div id="sideCardPrearm" class="side-card hidden">
+          <div class="side-card-header" onclick="switchSidebarTab('prearm')">
+            <span class="side-card-close">&times;</span>
+            <span>&#x2714; Pre-arm Checklist</span>
+          </div>
+          <div class="side-card-body">
+            <div class="telemetry-group">
+              <div class="group-title">ARM SAFETY CHECKS</div>
+              <div class="group-content">
+                <div id="prearmList"></div>
+              </div>
+            </div>
+            <div class="telemetry-group">
+              <div class="group-title">OVERALL</div>
+              <div class="group-content">
+                <div id="prearmOverall" class="prearm-overall">Checking...</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
 
     <div id="notifContainer"></div>
 
     <div id="statusbar">
-      <span id="statusMessage">Starting...</span>
+      <span id="flightStatus" class="flight-status comms-lost">COMMS LOST</span>
       <div class="status-right">
         <span id="s_connection" class="status-indicator" style="color:#ef4444">&#9679; Disconnected</span>
         <span class="status-sep"></span>
@@ -764,13 +836,12 @@
         <span id="tt_firmware" class="status-indicator">FW: ---</span>
         <span id="tt_cpu_load" class="status-indicator">CPU: ---</span>
       </div>
-          </div>
-        </div>
+    </div>
+  </div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/static/js/toolbar.js?v=13"></script>
-  <script src="/static/js/waterfall.js?v=1"></script>
   <script src="/static/js/grid.js?v=10"></script>
   <script src="/static/js/app.js?v=13"></script>
 </body>

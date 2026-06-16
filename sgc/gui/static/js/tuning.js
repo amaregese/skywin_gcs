@@ -1,6 +1,6 @@
 const socket = io();
 
-const TUNE_GROUPS = [
+const BASIC_TUNE_GROUPS = [
   {
     id: 'rate_roll_pitch',
     name: 'Rate Roll / Pitch',
@@ -65,10 +65,128 @@ const TUNE_GROUPS = [
   },
 ];
 
+const EXTENDED_TUNE_GROUPS = [
+  {
+    id: 'ext_rate_roll',
+    name: 'Rate Roll (PIDF + Filter)',
+    params: [
+      { key: 'ATC_RAT_RLL_P', label: 'Roll Rate P', min: 0.01, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_RLL_I', label: 'Roll Rate I', min: 0.01, max: 1.0, step: 0.001, units: '' },
+      { key: 'ATC_RAT_RLL_D', label: 'Roll Rate D', min: 0.0, max: 0.01, step: 0.0001, units: '' },
+      { key: 'ATC_RAT_RLL_FF', label: 'Roll Rate FF', min: 0.0, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_RLL_FILT', label: 'Roll Rate Filter', min: 1, max: 100, step: 1, units: 'Hz' },
+    ],
+  },
+  {
+    id: 'ext_rate_pitch',
+    name: 'Rate Pitch (PIDF + Filter)',
+    params: [
+      { key: 'ATC_RAT_PIT_P', label: 'Pitch Rate P', min: 0.01, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_PIT_I', label: 'Pitch Rate I', min: 0.01, max: 1.0, step: 0.001, units: '' },
+      { key: 'ATC_RAT_PIT_D', label: 'Pitch Rate D', min: 0.0, max: 0.01, step: 0.0001, units: '' },
+      { key: 'ATC_RAT_PIT_FF', label: 'Pitch Rate FF', min: 0.0, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_PIT_FILT', label: 'Pitch Rate Filter', min: 1, max: 100, step: 1, units: 'Hz' },
+    ],
+  },
+  {
+    id: 'ext_rate_yaw',
+    name: 'Rate Yaw (PIDF + Filter)',
+    params: [
+      { key: 'ATC_RAT_YAW_P', label: 'Yaw Rate P', min: 0.01, max: 0.8, step: 0.001, units: '' },
+      { key: 'ATC_RAT_YAW_I', label: 'Yaw Rate I', min: 0.001, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_YAW_D', label: 'Yaw Rate D', min: 0.0, max: 0.01, step: 0.0001, units: '' },
+      { key: 'ATC_RAT_YAW_FF', label: 'Yaw Rate FF', min: 0.0, max: 0.5, step: 0.001, units: '' },
+      { key: 'ATC_RAT_YAW_FILT', label: 'Yaw Rate Filter', min: 1, max: 100, step: 1, units: 'Hz' },
+    ],
+  },
+  {
+    id: 'ext_angle',
+    name: 'Angle (P Gains)',
+    params: [
+      { key: 'ATC_ANG_RLL_P', label: 'Roll Angle P', min: 1.0, max: 20.0, step: 0.1, units: '' },
+      { key: 'ATC_ANG_PIT_P', label: 'Pitch Angle P', min: 1.0, max: 20.0, step: 0.1, units: '' },
+      { key: 'ATC_ANG_YAW_P', label: 'Yaw Angle P', min: 1.0, max: 10.0, step: 0.1, units: '' },
+      { key: 'ATC_ANG_MAX', label: 'Angle Max Tilt', min: 1000, max: 8000, step: 100, units: 'cdeg' },
+      { key: 'ATC_ANG_LIM_TC', label: 'Angle Limit Time Constant', min: 0.1, max: 2.0, step: 0.05, units: 's' },
+    ],
+  },
+  {
+    id: 'ext_altitude',
+    name: 'Altitude Hold',
+    params: [
+      { key: 'ALT_HOLD_P', label: 'Altitude Hold P', min: 0.5, max: 5.0, step: 0.1, units: '' },
+      { key: 'ALT_HOLD_I', label: 'Altitude Hold I', min: 0.0, max: 2.0, step: 0.05, units: '' },
+      { key: 'ALT_HOLD_D', label: 'Altitude Hold D', min: 0.0, max: 0.5, step: 0.01, units: '' },
+    ],
+  },
+  {
+    id: 'ext_position',
+    name: 'Position Control',
+    params: [
+      { key: 'POS_XY_P', label: 'Position XY P', min: 0.5, max: 5.0, step: 0.1, units: '' },
+      { key: 'POS_XY_I', label: 'Position XY I', min: 0.0, max: 3.0, step: 0.05, units: '' },
+      { key: 'POS_XY_D', label: 'Position XY D', min: 0.0, max: 1.0, step: 0.01, units: '' },
+      { key: 'POS_Z_P', label: 'Position Z P', min: 0.5, max: 5.0, step: 0.1, units: '' },
+    ],
+  },
+  {
+    id: 'ext_velocity',
+    name: 'Velocity Control',
+    params: [
+      { key: 'VEL_XY_P', label: 'Velocity XY P', min: 0.5, max: 8.0, step: 0.1, units: '' },
+      { key: 'VEL_XY_I', label: 'Velocity XY I', min: 0.0, max: 3.0, step: 0.05, units: '' },
+      { key: 'VEL_XY_D', label: 'Velocity XY D', min: 0.0, max: 1.0, step: 0.01, units: '' },
+      { key: 'VEL_Z_P', label: 'Velocity Z P', min: 0.5, max: 5.0, step: 0.1, units: '' },
+    ],
+  },
+  {
+    id: 'ext_throttle',
+    name: 'Throttle',
+    params: [
+      { key: 'ATC_THR_MID', label: 'Throttle Mid', min: 300, max: 800, step: 1, units: '' },
+      { key: 'MOT_THST_HOVER', label: 'Throttle Hover', min: 0.1, max: 0.8, step: 0.01, units: '' },
+      { key: 'ATC_THR_ACCEL_P', label: 'Throttle Accel P', min: 0.1, max: 2.0, step: 0.05, units: '' },
+      { key: 'ATC_THR_ACCEL_I', label: 'Throttle Accel I', min: 0.1, max: 2.0, step: 0.05, units: '' },
+      { key: 'ATC_THR_ACCEL_D', label: 'Throttle Accel D', min: 0.0, max: 1.0, step: 0.01, units: '' },
+    ],
+  },
+  {
+    id: 'ext_loiter',
+    name: 'Loiter',
+    params: [
+      { key: 'LOIT_SPEED', label: 'Loiter Speed', min: 100, max: 2000, step: 50, units: 'cm/s' },
+      { key: 'LOIT_SPEED_DN', label: 'Loiter Speed Down', min: 50, max: 500, step: 10, units: 'cm/s' },
+      { key: 'LOIT_ANG_MAX', label: 'Loiter Angle Max', min: 500, max: 4500, step: 100, units: 'cdeg' },
+      { key: 'LOIT_BRK_ACCEL', label: 'Loiter Brake Accel', min: 25, max: 500, step: 25, units: 'cm/s/s' },
+      { key: 'LOIT_BRK_DELAY', label: 'Loiter Brake Delay', min: 0.0, max: 2.0, step: 0.1, units: 's' },
+    ],
+  },
+  {
+    id: 'ext_navigation',
+    name: 'Navigation',
+    params: [
+      { key: 'WP_SPEED', label: 'Waypoint Speed', min: 100, max: 2000, step: 50, units: 'cm/s' },
+      { key: 'WP_RADIUS', label: 'Waypoint Radius', min: 100, max: 2000, step: 50, units: 'cm' },
+      { key: 'WP_ACCEL', label: 'Waypoint Acceleration', min: 50, max: 500, step: 25, units: 'cm/s/s' },
+    ],
+  },
+  {
+    id: 'ext_autotune',
+    name: 'AutoTune',
+    params: [
+      { key: 'AUTOTUNE_AXES', label: 'AutoTune Axes', min: 1, max: 7, step: 1, units: 'bitmask' },
+      { key: 'AUTOTUNE_AGGR', label: 'AutoTune Aggressiveness', min: 0.03, max: 0.2, step: 0.005, units: '' },
+      { key: 'AUTOTUNE_MIN_D', label: 'AutoTune Min D', min: 0.0, max: 0.005, step: 0.0001, units: '' },
+      { key: 'AUTOTUNE_MIN_P', label: 'AutoTune Min P', min: 0.01, max: 0.3, step: 0.005, units: '' },
+    ],
+  },
+];
+
 let _origValues = {};    // param_name -> original value from FCU
 let _changedValues = {};  // param_name -> edited value
 let _allParams = {};      // param_name -> full info from snapshot
 
+let _currentTab = 'basic';
 let _loading = false;
 
 function showStatus(msg) {
@@ -108,17 +226,23 @@ async function loadParams() {
 
 function renderGroups() {
   const wrap = document.getElementById('tuneWrap');
+  const notice = document.getElementById('extendedNotice');
   const connected = Object.keys(_allParams).length > 0;
 
   if (!connected) {
     wrap.innerHTML = '<div class="tune-not-connected">Not connected to a vehicle. Connect first, then open Tuning.</div>';
+    wrap.style.display = 'block';
+    notice.style.display = 'none';
     return;
   }
 
+  const groups = _currentTab === 'basic' ? BASIC_TUNE_GROUPS : EXTENDED_TUNE_GROUPS;
   let html = '';
-  for (const group of TUNE_GROUPS) {
+  let hasAny = false;
+  for (const group of groups) {
     const available = group.params.filter(p => _allParams[p.key]);
     if (available.length === 0) continue;
+    hasAny = true;
 
     html += `
       <div class="tune-group">
@@ -164,6 +288,13 @@ function renderGroups() {
     html += '</div></div>';
   }
 
+  if (!hasAny && _currentTab === 'extended') {
+    wrap.style.display = 'none';
+    notice.style.display = 'flex';
+    return;
+  }
+  wrap.style.display = 'block';
+  notice.style.display = 'none';
   wrap.innerHTML = html;
 }
 
@@ -269,6 +400,20 @@ async function refreshParams() {
   setTimeout(hideStatus, 2000);
 }
 
+function switchTab(tab) {
+  if (tab === _currentTab) return;
+  _currentTab = tab;
+
+  document.getElementById('tabBasic').classList.toggle('active', tab === 'basic');
+  document.getElementById('tabExtended').classList.toggle('active', tab === 'extended');
+
+  _origValues = {};
+  _changedValues = {};
+  renderGroups();
+  updateWriteBtn();
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  switchTab('basic');
   loadParams();
 });

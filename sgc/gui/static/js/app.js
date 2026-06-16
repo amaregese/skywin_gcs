@@ -16,6 +16,7 @@ const TRAIL_MAX = 500;
 const TRAIL_SEGMENTS = 10;
 let targetPoints = [];
 let targetGroup = null;
+var _flyTarget = null;
 var _logsRequested = false;
 
 socket.on('connect', () => {
@@ -23,6 +24,14 @@ socket.on('connect', () => {
     _logsRequested = true;
     socket.emit('request_logs');
   }
+});
+
+socket.on('disconnect', () => {
+  var stale = { connected: false, fix_type: 0, armed: false, mode: '---', satellites: 0, hdop: 99.99, ground_speed: 0, alt: 0, relative_alt: 0 };
+  updateStatusBar(stale);
+  var btn = document.getElementById('connectBtn');
+  if (btn) { btn.textContent = '\u25CF Connect'; btn.disabled = false; btn.classList.remove('connected', 'connecting'); }
+  if (typeof clearRcOverrides === 'function') clearRcOverrides();
 });
 
 function buildConnString() {
@@ -67,16 +76,26 @@ function onConnTypeChange() {
 function updateConnPreview() {
   var r = buildConnString();
   var el = document.getElementById('connStringPreview');
-  if (el) el.textContent = r.conn + ' @ ' + r.baud + ' baud';
+  if (el) {
+    var type = document.getElementById('connType').value;
+    if (r.conn) {
+      el.textContent = type === 'serial' ? r.conn + ' @ ' + r.baud + ' baud' : r.conn;
+    } else {
+      el.textContent = '—';
+    }
+  }
 }
 
 function scanSerialPorts() {
   var sel = document.getElementById('connSerialPort');
+  var baudEl = document.getElementById('connBaudSerial');
+  var baud = baudEl ? baudEl.value : 57600;
   sel.innerHTML = '<option value="">Scanning...</option>';
-  fetch('/api/ports').then(function(r) { return r.json(); }).then(function(ports) {
+  fetch('/api/ports?baud=' + baud + '&timeout=2').then(function(r) { return r.json(); }).then(function(ports) {
     sel.innerHTML = '';
     if (!ports || ports.length === 0) {
-      sel.innerHTML = '<option value="">No ports found</option>';
+      sel.innerHTML = '<option value="">No ports found at ' + baud + ' baud</option>';
+      showManualSerialPort(true);
       return;
     }
     ports.forEach(function(p) {
@@ -85,9 +104,36 @@ function scanSerialPorts() {
       opt.textContent = p.device + ' (' + (p.description || 'Unknown') + ')';
       sel.appendChild(opt);
     });
+    showManualSerialPort(false);
   }).catch(function() {
     sel.innerHTML = '<option value="">Scan failed</option>';
+    showManualSerialPort(true);
   });
+}
+
+function showManualSerialPort(show) {
+  var el = document.getElementById('connSerialManualRow');
+  if (el) el.style.display = show ? 'flex' : 'none';
+}
+
+function useManualSerialPort() {
+  var manual = document.getElementById('connSerialManual');
+  if (!manual || !manual.value.trim()) return;
+  var sel = document.getElementById('connSerialPort');
+  var val = manual.value.trim();
+  var exists = false;
+  for (var i = 0; i < sel.options.length; i++) {
+    if (sel.options[i].value === val) { exists = true; break; }
+  }
+  if (!exists) {
+    var opt = document.createElement('option');
+    opt.value = val;
+    opt.textContent = val + ' (manual)';
+    sel.appendChild(opt);
+  }
+  sel.value = val;
+  manual.value = '';
+  showManualSerialPort(false);
 }
 
 function toggleConnection() {
@@ -95,6 +141,7 @@ function toggleConnection() {
   if (window.vehicle && window.vehicle.connected) {
     btn.textContent = '\u25CF Disconnecting...';
     btn.disabled = true;
+    btn.classList.remove('connected');
     socket.emit('disconnect_request');
   } else {
     showConnDialog();
@@ -117,6 +164,8 @@ function closeConnDialog() {
   document.getElementById('connDialog').classList.add('hidden');
 }
 
+var _connectTimeout = null;
+
 function doConnect() {
   var r = buildConnString();
   if (!r.conn) {
@@ -125,8 +174,15 @@ function doConnect() {
   }
   closeConnDialog();
   var btn = document.getElementById('connectBtn');
-  if (btn) { btn.textContent = '\u25CF Connecting...'; btn.disabled = true; btn.style.opacity = '0.5'; }
+  if (btn) { btn.textContent = '\u25CF Connecting...'; btn.disabled = true; btn.classList.add('connecting'); }
   socket.emit('connect_request', { connection: r.conn, baud: r.baud });
+
+  if (_connectTimeout) clearTimeout(_connectTimeout);
+  _connectTimeout = setTimeout(function() {
+    log('Connection attempt timed out after 30s', 'error');
+    resetConnectBtn();
+    _connectTimeout = null;
+  }, 30000);
 }
 
 // Set up connection dialog listeners
@@ -144,25 +200,46 @@ function initConnDialog() {
       updateConnPreview();
     });
   }
+  var baudSerial = document.getElementById('connBaudSerial');
+  if (baudSerial) {
+    baudSerial.addEventListener('change', function() {
+      showManualSerialPort(true);
+      var sel = document.getElementById('connSerialPort');
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Re-scan with new baud rate --</option>';
+        setTimeout(scanSerialPorts, 300);
+      }
+    });
+  }
 }
 document.addEventListener('DOMContentLoaded', initConnDialog);
 
+var _lastStateUpdate = 0;
+
+setInterval(function() {
+  if (Date.now() - _lastStateUpdate > 5000) {
+    var stale = { connected: false, fix_type: 0, armed: false, mode: '---', satellites: 0, hdop: 99.99, ground_speed: 0, alt: 0, relative_alt: 0 };
+    updateStatusBar(stale);
+  }
+}, 2000);
+
 socket.on('state_update', (data) => {
+  _lastStateUpdate = Date.now();
   vehicle = data; window.vehicle = data;
   updateTelemetry(data);
 
   var btn = document.getElementById('connectBtn');
   if (btn) {
+    btn.classList.remove('connecting');
+    if (_connectTimeout) { clearTimeout(_connectTimeout); _connectTimeout = null; }
     if (data.connected) {
       btn.textContent = '\u25CF Connected';
       btn.classList.add('connected');
       btn.disabled = false;
-      btn.style.opacity = '1';
     } else {
       btn.textContent = '\u25CF Connect';
       btn.classList.remove('connected');
       btn.disabled = false;
-      btn.style.opacity = '1';
     }
   }
   updateMap(data);
@@ -175,6 +252,7 @@ socket.on('state_update', (data) => {
   updateHud(data);
   updateMissionPanel(data);
   updateTargetDistPanel(data);
+  updatePrearmChecklist(data);
   if (data.connected) {
     if (!window._reqMission) {
       window._reqMission = true;
@@ -195,11 +273,20 @@ socket.on('state_update', (data) => {
   }
 });
 
+function resetConnectBtn() {
+  if (_connectTimeout) { clearTimeout(_connectTimeout); _connectTimeout = null; }
+  var btn = document.getElementById('connectBtn');
+  if (btn) { btn.textContent = '\u25CF Connect'; btn.disabled = false; btn.classList.remove('connected', 'connecting'); }
+}
+
 socket.on('log', (data) => {
   log(data.message, data.level);
   var msg = (data.message || '').toLowerCase();
   if (msg.includes('prearm') || msg.includes('pre-arm') || msg.includes('check failed') || (data.level === 'error' && msg.includes('arming'))) {
     notify(data.message, 'danger');
+  }
+  if (msg.includes('connection failed') || msg.includes('no heartbeat') || msg.includes('already attempted')) {
+    resetConnectBtn();
   }
   // Don't let our own server log messages trigger calibration UI
   if (_calActive && !msg.includes('got command_ack') && !msg.startsWith('sending') && !msg.startsWith('starting') && (msg.includes('place') || msg.includes('rotate') || msg.includes('calibration') || msg.includes('progress') || msg.includes('orient') || msg.includes('finished') || msg.includes('complete') || msg.includes('continue') || msg.includes('success') || msg.includes('failed') || msg.includes('rejected') || msg.includes('trim ok') || msg.includes('trim:'))) {
@@ -227,8 +314,8 @@ socket.on('fence_data', (data) => {
 socket.on('tlog_status', (data) => {
   const btn = document.getElementById('tlogBtn');
   if (!btn) return;
-  if (data.active) { btn.classList.add('active'); btn.textContent = '\u25A0 LOG'; }
-  else { btn.classList.remove('active'); btn.textContent = '\u25CF LOG'; }
+  if (data.active) { btn.classList.add('active'); btn.textContent = '\u25A0 DATA LOG'; }
+  else { btn.classList.remove('active'); btn.textContent = '\u25CF DATA LOG'; }
 });
 
 function toggleTlog() {
@@ -243,15 +330,51 @@ function toggleTlog() {
   }
 }
 
+var _consoleCount = 0;
+var _consoleMax = 500;
+
 function log(message, level = 'info') {
   const el = document.getElementById('consoleOutput');
   if (!el) return;
-  const div = document.createElement('div');
-  div.className = `log-${level}`;
   var t = new Date();
-  div.textContent = '[' + String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0') + '] ' + message;
-  el.appendChild(div);
+  var time = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0') + ':' + String(t.getSeconds()).padStart(2, '0');
+
+  var entry = document.createElement('div');
+  entry.className = 'log-entry';
+
+  var timeEl = document.createElement('span');
+  timeEl.className = 'log-time';
+  timeEl.textContent = time;
+  entry.appendChild(timeEl);
+
+  var badge = document.createElement('span');
+  badge.className = 'log-badge log-badge-' + level;
+  badge.textContent = level;
+  entry.appendChild(badge);
+
+  var msg = document.createElement('span');
+  msg.className = 'log-msg ' + level;
+  msg.textContent = message;
+  entry.appendChild(msg);
+
+  el.appendChild(entry);
   el.scrollTop = el.scrollHeight;
+
+  _consoleCount++;
+  var badgeEl = document.getElementById('consoleBadge');
+  if (badgeEl) badgeEl.textContent = _consoleCount;
+
+  while (el.children.length > _consoleMax) {
+    el.removeChild(el.firstChild);
+  }
+}
+
+function clearConsole() {
+  var el = document.getElementById('consoleOutput');
+  if (el) el.innerHTML = '';
+  _consoleCount = 0;
+  var badgeEl = document.getElementById('consoleBadge');
+  if (badgeEl) badgeEl.textContent = '0';
 }
 
 function setMode() {
@@ -285,6 +408,7 @@ function armTakeoff() {
   setTimeout(() => { command('TAKEOFF', { altitude: parseFloat(alt) || 10 }); }, 2000);
 }
 
+// --- Motor Test ---
 // --- Calibration ---
 var _calActive = false;
 var _calType = '';
@@ -604,7 +728,7 @@ socket.on('mag_cal_report', function(data) {
 function updateTelemetry(data) {
   setText('t_lat', data.lat?.toFixed(7) ?? '0.0000000');
   setText('t_lon', data.lon?.toFixed(7) ?? '0.0000000');
-  setText('t_alt', data.alt?.toFixed(2) ?? '0.00');
+  setText('t_alt', (data.relative_alt ?? data.alt ?? 0).toFixed(2));
   setText('t_speed', data.ground_speed?.toFixed(2) ?? '0.00');
   setText('t_heading', data.heading?.toFixed(1) ?? '0.0');
   setText('t_volt', data.battery_voltage?.toFixed(2) ?? '0.00');
@@ -615,10 +739,12 @@ function updateTelemetry(data) {
   setText('t_batt_rem', remDisplay);
 
   const fill = document.getElementById('batteryFill');
-  const pct = data.battery_remaining >= 0 ? rem : 0;
-  fill.style.width = pct + '%';
-  fill.style.background = pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : '#ef4444';
-  fill.nextElementSibling.textContent = (data.battery_remaining >= 0 ? pct : '--') + '%';
+  if (fill) {
+    const pct = data.battery_remaining >= 0 ? rem : 0;
+    fill.style.width = pct + '%';
+    fill.style.background = pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : '#ef4444';
+    if (fill.nextElementSibling) fill.nextElementSibling.textContent = (data.battery_remaining >= 0 ? pct : '--') + '%';
+  }
 
   setText('t_roll', data.roll?.toFixed(1) ?? '0.0');
   setText('t_pitch', data.pitch?.toFixed(1) ?? '0.0');
@@ -709,6 +835,7 @@ function updateMap(data) {
     trail.push(latlng);
     if (trail.length > TRAIL_MAX) trail.splice(0, trail.length - TRAIL_MAX);
     rebuildTrail();
+    updateFlyTargetLine();
   }
 }
 
@@ -804,7 +931,7 @@ function initMap(lat, lon) {
     var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
     var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
 
-    osm.addTo(window.map);
+    sat.addTo(window.map);
 
     var gridLayer = addGrid(window.map);
     trailGroup = L.featureGroup().addTo(window.map);
@@ -861,6 +988,10 @@ function initMap(lat, lon) {
       menu.style.top = `${e.originalEvent.clientY}px`;
       menu.dataset.lat = ll.lat.toFixed(7);
       menu.dataset.lon = ll.lng.toFixed(7);
+      var clearFly = document.getElementById('ctxClearFly');
+      if (clearFly) {
+        clearFly.classList.toggle('hidden', !_flyTarget);
+      }
       menu.classList.remove('hidden');
     });
   } catch (e) {
@@ -881,7 +1012,61 @@ function flyToHere() {
   menu.classList.add('hidden');
   const alt = prompt('Altitude (m):', '50');
   if (alt === null) return;
+  clearFlyTarget();
+  var icon = L.divIcon({
+    className: 'fly-target-icon',
+    html: '<div class="fly-target-pin"><div class="fly-target-dot"></div><div class="fly-target-ring"></div></div>',
+    iconSize: [32, 44],
+    iconAnchor: [16, 44],
+  });
+  var marker = L.marker([lat, lon], { icon: icon, zIndexOffset: 900 }).addTo(window.map);
+  marker.bindTooltip('Fly Target<br/><span style="font-size:9px;color:#94a3b8">click to remove</span>', { direction: 'top' });
+  marker.on('click', function() { clearFlyTarget(); });
+  var vl = window.vehicle?.lat ? [window.vehicle.lat, window.vehicle.lon] : [lat, lon];
+  var line = L.polyline([vl, [lat, lon]], {
+    color: '#f59e0b', weight: 2, dashArray: '10,8', opacity: 0.85,
+  }).addTo(window.map);
+  var dist = haversine(vl[0], vl[1], lat, lon);
+  var distText = dist >= 1000 ? (dist / 1000).toFixed(2) + ' km' : dist.toFixed(0) + ' m';
+  var mid = [(vl[0] + lat) / 2, (vl[1] + lon) / 2];
+  var label = L.marker(mid, {
+    icon: L.divIcon({
+      className: 'fly-target-label',
+      html: '<span class="fly-target-dist">' + distText + '</span>',
+      iconSize: [0, 0],
+      iconAnchor: [0, 0],
+    }),
+    interactive: false, zIndexOffset: 950,
+  }).addTo(window.map);
+  _flyTarget = { marker, line, label, lat, lon, alt: parseFloat(alt) || 50 };
   command('GUIDED_GOTO', { lat, lon, altitude: parseFloat(alt) || 50 });
+}
+
+function clearFlyTarget() {
+  if (!_flyTarget) return;
+  try {
+    if (_flyTarget.marker && window.map) window.map.removeLayer(_flyTarget.marker);
+    if (_flyTarget.line && window.map) window.map.removeLayer(_flyTarget.line);
+    if (_flyTarget.label && window.map) window.map.removeLayer(_flyTarget.label);
+  } catch (e) {}
+  _flyTarget = null;
+}
+
+function updateFlyTargetLine() {
+  if (!_flyTarget || !window.vehicle?.lat || !window.vehicle?.lon) return;
+  var vl = [window.vehicle.lat, window.vehicle.lon];
+  var tl = [_flyTarget.lat, _flyTarget.lon];
+  _flyTarget.line.setLatLngs([vl, tl]);
+  var dist = haversine(vl[0], vl[1], tl[0], tl[1]);
+  var distText = dist >= 1000 ? (dist / 1000).toFixed(2) + ' km' : dist.toFixed(0) + ' m';
+  var mid = [(vl[0] + tl[0]) / 2, (vl[1] + tl[1]) / 2];
+  _flyTarget.label.setLatLng(mid);
+  _flyTarget.label.setIcon(L.divIcon({
+    className: 'fly-target-label',
+    html: '<span class="fly-target-dist">' + distText + '</span>',
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  }));
 }
 
 /* Measurement Tool */
@@ -913,15 +1098,6 @@ function formatDist(d, unit) {
   if (v >= 1) return v.toFixed(2) + ' ' + distSuffix(unit);
   return v.toFixed(3) + ' ' + distSuffix(unit);
 }
-function bearing(lat1, lng1, lat2, lng2) {
-  var dLng = (lng2 - lng1) * Math.PI / 180;
-  var y = Math.sin(dLng) * Math.cos(lat2 * Math.PI / 180);
-  var x = Math.cos(lat1 * Math.PI / 180) * Math.sin(lat2 * Math.PI / 180)
-        - Math.sin(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.cos(dLng);
-  var brng = Math.atan2(y, x) * 180 / Math.PI;
-  return ((brng + 360) % 360);
-}
-
 function updateMeasureInfo(dist, brg) {
   var dEl = document.getElementById('measureDist');
   var bEl = document.getElementById('measureBearing');
@@ -929,28 +1105,83 @@ function updateMeasureInfo(dist, brg) {
   if (bEl) bEl.textContent = brg != null ? brg.toFixed(3) + '\u00B0' : '---';
 }
 
-function toggleMeasure() {
-  var btn = document.getElementById('measureBtn');
-  if (measure.active) {
-    stopMeasuring();
-    btn.classList.remove('active');
-  } else {
-    startMeasuring();
-    btn.classList.add('active');
+/* ---- Panel Layout Config for Auto-Stacking ---- */
+var _panelLayout = [
+  { id: 'missionPanel',       side: 'right', order: 0, btnId: 'missionBtn', section: 'flight' },
+  { id: 'dmsPanel',           side: 'right', order: 1, btnId: 'dmsBtn',     section: 'flight' },
+  { id: 'fencePanel',         side: 'right', order: 2, btnId: 'fenceBtn',   section: 'flight' },
+  { id: 'sideCardTelemetry',  side: 'right', order: 3, btnId: null,         section: 'data' },
+  { id: 'sideCardCharts',     side: 'right', order: 4, btnId: null,         section: 'data' },
+  { id: 'sideCardInspector',  side: 'right', order: 5, btnId: null,         section: 'data' },
+  { id: 'sideCardHealth',     side: 'right', order: 6, btnId: null,         section: 'data' },
+  { id: 'sideCardStats',      side: 'right', order: 7, btnId: null,         section: 'data' },
+  { id: 'sideCardTargets',    side: 'right', order: 8, btnId: null,         section: 'data' },
+  { id: 'sideCardCamera',     side: 'right', order: 9, btnId: null,         section: 'data' },
+  { id: 'brgPanel',           side: 'left',  order: 0, btnId: 'brgBtn',    section: 'flight' },
+  { id: 'measureInfo',        side: 'left',  order: 1, btnId: 'measureBtn', section: 'flight' },
+];
+
+function refreshPanelPositions() {
+  var sides = ['right', 'left'];
+  for (var s = 0; s < sides.length; s++) {
+    var side = sides[s];
+    var panels = [];
+    for (var i = 0; i < _panelLayout.length; i++) {
+      if (_panelLayout[i].side === side) panels.push(_panelLayout[i]);
+    }
+    panels.sort(function(a, b) { return a.order - b.order; });
+    var gap = 8;
+    var nextTop = 10;
+    for (var i = 0; i < panels.length; i++) {
+      var el = document.getElementById(panels[i].id);
+      if (el && !el.classList.contains('hidden')) {
+        el.style.top = nextTop + 'px';
+        if (side === 'right') { el.style.right = '10px'; el.style.left = 'auto'; }
+        else { el.style.left = '10px'; el.style.right = 'auto'; }
+        nextTop = el.offsetTop + el.offsetHeight + gap;
+      }
+    }
   }
 }
 
-function toggleMissionPanel() {
-  var panel = document.getElementById('missionPanel');
-  var btn = document.getElementById('missionBtn');
+function _togglePanel(panelId) {
+  var cfg = null;
+  for (var i = 0; i < _panelLayout.length; i++) { if (_panelLayout[i].id === panelId) { cfg = _panelLayout[i]; break; } }
+  if (!cfg) return;
+  var panel = document.getElementById(panelId);
+  var btn = document.getElementById(cfg.btnId);
   if (!panel) return;
-  var show = panel.classList.toggle('hidden');
-  if (btn) btn.classList.toggle('active', show);
+  if (!panel.classList.contains('hidden')) {
+    panel.classList.add('hidden');
+    if (btn) btn.classList.remove('active');
+    refreshPanelPositions();
+    return;
+  }
+  panel.classList.remove('hidden');
+  if (btn) btn.classList.add('active');
+  refreshPanelPositions();
 }
+
+function toggleMeasure() {
+  var btn = document.getElementById('measureBtn');
+  var info = document.getElementById('measureInfo');
+  if (measure.active) {
+    stopMeasuring();
+    btn.classList.remove('active');
+    if (info) info.classList.add('hidden');
+  } else {
+    if (info) info.classList.remove('hidden');
+    startMeasuring();
+    btn.classList.add('active');
+  }
+  refreshPanelPositions();
+}
+
+function toggleMissionPanel() { _togglePanel('missionPanel'); }
 
 function updateMissionPanel(data) {
   document.getElementById('missionMode').textContent = data.mode ?? '---';
-  document.getElementById('missionAlt').textContent = (data.alt ?? 0).toFixed(1) + ' m';
+  document.getElementById('missionAlt').textContent = (data.relative_alt ?? data.alt ?? 0).toFixed(1) + ' m';
   document.getElementById('missionSpeed').textContent = (data.ground_speed ?? 0).toFixed(1) + ' m/s';
   var br = data.battery_remaining;
   document.getElementById('missionBatt').textContent = (br >= 0 ? br : '--') + '%';
@@ -1105,6 +1336,25 @@ window.startMeasuring = startMeasuring;
 function updateActions(data) {
   setText('tt_type', data.vehicle_type ?? '---');
   setText('tt_firmware', data.firmware ? data.firmware.substring(0,12) : '---');
+
+  var connected = !!data.connected;
+  var armed = !!data.armed;
+  var alt = parseFloat(data.relative_alt) || 0;
+  var flying = armed && alt > 2;
+
+  var btnArm = document.getElementById('btnArm');
+  var btnDisarm = document.getElementById('btnDisarm');
+  var btnRtl = document.getElementById('btnRtl');
+  var btnLand = document.getElementById('btnLand');
+  var btnTakeoff = document.getElementById('btnTakeoff');
+  var btnArmTakeoff = document.getElementById('btnArmTakeoff');
+
+  if (btnArm) btnArm.disabled = !connected || armed;
+  if (btnDisarm) btnDisarm.disabled = !connected || !armed || flying;
+  if (btnRtl) btnRtl.disabled = !connected;
+  if (btnLand) btnLand.disabled = !connected;
+  if (btnTakeoff) btnTakeoff.disabled = !connected || !armed || flying;
+  if (btnArmTakeoff) btnArmTakeoff.disabled = !connected || armed || flying;
 }
 
 function updateStatusBar(data) {
@@ -1112,11 +1362,9 @@ function updateStatusBar(data) {
   if (data.connected) {
     s_conn.textContent = '\u25cf Connected';
     s_conn.style.color = '#22c55e';
-    document.getElementById('statusMessage').textContent = 'Connected';
   } else {
     s_conn.textContent = '\u25cf Disconnected';
     s_conn.style.color = '#ef4444';
-    document.getElementById('statusMessage').textContent = 'Disconnected';
   }
 
   const s_gps = document.getElementById('s_gps');
@@ -1156,6 +1404,47 @@ function updateStatusBar(data) {
 
   document.getElementById('sysidInd').textContent =
     data.connected ? `SysID: ${data.sysid ?? '?'} | CompID: ${data.compid ?? '?'}` : 'SysID: --';
+
+  updateFlightStatus(data);
+}
+
+function updateFlightStatus(data) {
+  var el = document.getElementById('flightStatus');
+  if (!el) return;
+
+  if (!data.connected) {
+    el.textContent = 'COMMS LOST';
+    el.className = 'flight-status comms-lost';
+    return;
+  }
+
+  if (data.armed) {
+    var alt = data.relative_alt || data.alt || 0;
+    if (alt > 2 || (data.ground_speed || 0) > 3) {
+      if ((data.mode || '').toUpperCase() === 'LAND') {
+        el.textContent = 'LANDING';
+        el.className = 'flight-status landing';
+      } else {
+        el.textContent = 'FLYING';
+        el.className = 'flight-status flying';
+      }
+      return;
+    }
+    el.textContent = 'ARMED';
+    el.className = 'flight-status armed';
+    return;
+  }
+
+  if (data.fix_type >= 3) {
+    el.textContent = 'READY TO FLY';
+    el.className = 'flight-status ready-green';
+  } else if (data.fix_type >= 2) {
+    el.textContent = 'READY TO FLY';
+    el.className = 'flight-status ready-yellow';
+  } else {
+    el.textContent = 'NOT READY';
+    el.className = 'flight-status not-ready';
+  }
 }
 
 function updateSensorHealth(data) {
@@ -1213,7 +1502,7 @@ function updateSensorHealth(data) {
 
 var _fsHomeSet = false, _fsHomeLat = 0, _fsHomeLon = 0;
 var _fsMaxAlt = 0, _fsMaxGS = 0, _fsMaxDist = 0;
-var _fsArmed = false, _fsTimerStart = null;
+var _fsArmed = false, _fsTimerStart = null, _fsTimerInterval = null;
 
 function updateFlightStats(data) {
   if (!data.connected) {
@@ -1226,7 +1515,8 @@ function updateFlightStats(data) {
   if (!_fsHomeSet && data.lat && data.lon) {
     _fsHomeLat = data.lat; _fsHomeLon = data.lon; _fsHomeSet = true;
   }
-  if (data.alt !== undefined && data.alt > _fsMaxAlt) _fsMaxAlt = data.alt;
+  var trackAlt = data.relative_alt ?? data.alt;
+  if (trackAlt !== undefined && trackAlt > _fsMaxAlt) _fsMaxAlt = trackAlt;
   if (data.ground_speed !== undefined && data.ground_speed > _fsMaxGS) _fsMaxGS = data.ground_speed;
   if (_fsHomeSet && data.lat && data.lon) {
     var d = haversine(_fsHomeLat, _fsHomeLon, data.lat, data.lon);
@@ -1307,20 +1597,29 @@ function checkNotifications(data) {
 
 function toggleActionPanel() {
   var panel = document.getElementById('actionPanel');
-  var btn = document.getElementById('collapseActionBtn');
-  if (!panel || !btn) return;
+  var arrow = document.getElementById('collapseTabArrow');
+  var tab = document.getElementById('collapseTab');
+  if (!panel || !arrow || !tab) return;
   panel.classList.toggle('collapsed');
   if (panel.classList.contains('collapsed')) {
-    btn.textContent = '\u25C0';
-    btn.title = 'Expand panel';
+    arrow.textContent = '\u25C0';
+    tab.title = 'Expand panel';
   } else {
-    btn.textContent = '\u25B6';
-    btn.title = 'Collapse panel';
+    arrow.textContent = '\u25B6';
+    tab.title = 'Collapse panel';
   }
 }
 
 function switchActionTab(tab) {
   // no-op — health/stats moved to sidebar tabs
+}
+
+function toggleConsoleSize() {
+  var el = document.getElementById('rightConsole');
+  var btn = document.getElementById('consoleExpandBtn');
+  if (!el || !btn) return;
+  el.classList.toggle('expanded');
+  btn.title = el.classList.contains('expanded') ? 'Collapse console' : 'Expand to bottom panel';
 }
 
 /* HUD - Attitude Indicator + Compass */
@@ -1365,9 +1664,9 @@ function updateHud(data) {
 
   // Middle right: climb, flight time, airspeed, altitude
   setText('hudAirspeed', (data.air_speed ?? 0).toFixed(1));
-  setText('hudAltitude', (data.alt ?? 0).toFixed(1));
+  setText('hudAltitude', (data.relative_alt ?? data.alt ?? 0).toFixed(1));
 
-  var alt = data.alt ?? 0;
+  var alt = data.relative_alt ?? data.alt ?? 0;
   if (_hudLastAlt !== null && _hudLastTime !== null) {
     var dt = (now - _hudLastTime) / 1000;
     if (dt > 0.01 && dt < 5) _hudClimb = (alt - _hudLastAlt) / dt;
@@ -1677,14 +1976,14 @@ function feedCharts(data) {
   if (!data.connected) return;
   var t = new Date();
   var label = String(t.getHours()).padStart(2,'0') + ':' + String(t.getMinutes()).padStart(2,'0') + ':' + String(t.getSeconds()).padStart(2,'0');
-  pushChartData('alt', label, data.alt ?? 0);
+  pushChartData('alt', label, data.relative_alt ?? data.alt ?? 0);
   pushChartData('speed', label, data.ground_speed ?? 0);
   pushChartData('volt', label, data.battery_voltage ?? 0);
   pushChartData('current', label, data.battery_current ?? 0);
 }
 
 function switchSidebarTab(tab) {
-  var cardId = tab === 'charts' ? 'sideCardCharts' : tab === 'inspector' ? 'sideCardInspector' : tab === 'health' ? 'sideCardHealth' : tab === 'stats' ? 'sideCardStats' : tab === 'targets' ? 'sideCardTargets' : tab === 'camera' ? 'sideCardCamera' : 'sideCardTelemetry';
+  var cardId = tab === 'charts' ? 'sideCardCharts' : tab === 'inspector' ? 'sideCardInspector' : tab === 'health' ? 'sideCardHealth' : tab === 'stats' ? 'sideCardStats' : tab === 'targets' ? 'sideCardTargets' : tab === 'camera' ? 'sideCardCamera' : tab === 'prearm' ? 'sideCardPrearm' : 'sideCardTelemetry';
   var card = document.getElementById(cardId);
   if (!card) return;
   var isOpen = !card.classList.contains('hidden');
@@ -1692,62 +1991,40 @@ function switchSidebarTab(tab) {
   btns.forEach(function(b) { b.classList.remove('active'); });
   if (isOpen) {
     card.classList.add('hidden');
-    if (tab === 'inspector') {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
+    if (tab === 'inspector') { inspectorState.active = false; socket.emit('stop_inspector'); }
+    refreshPanelPositions();
     return;
   }
-  var cards = ['sideCardTelemetry', 'sideCardCharts', 'sideCardInspector', 'sideCardHealth', 'sideCardStats', 'sideCardTargets', 'sideCardCamera'];
-  cards.forEach(function(id) { var el = document.getElementById(id); if (el) el.classList.add('hidden'); });
   var activeBtn = document.querySelector('.sidebar-btn[data-tab="' + tab + '"]');
   if (activeBtn) activeBtn.classList.add('active');
   if (tab === 'charts') {
     document.getElementById('sideCardCharts').classList.remove('hidden');
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
-    for (var key in chartState) {
-      if (chartState[key] && chartState[key].chart) {
-        try { chartState[key].chart.resize(); } catch(e) {}
-      }
-    }
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
+    for (var key in chartState) { if (chartState[key] && chartState[key].chart) { try { chartState[key].chart.resize(); } catch(e) {} } }
   } else if (tab === 'inspector') {
     document.getElementById('sideCardInspector').classList.remove('hidden');
-    inspectorState.active = true;
-    socket.emit('start_inspector');
+    inspectorState.active = true; socket.emit('start_inspector');
   } else if (tab === 'health') {
     document.getElementById('sideCardHealth').classList.remove('hidden');
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
   } else if (tab === 'stats') {
     document.getElementById('sideCardStats').classList.remove('hidden');
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
   } else if (tab === 'targets') {
     document.getElementById('sideCardTargets').classList.remove('hidden');
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
   } else if (tab === 'camera') {
     document.getElementById('sideCardCamera').classList.remove('hidden');
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
+  } else if (tab === 'prearm') {
+    document.getElementById('sideCardPrearm').classList.remove('hidden');
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
+    updatePrearmChecklist(window.vehicle || {});
   } else {
-    if (inspectorState.active) {
-      inspectorState.active = false;
-      socket.emit('stop_inspector');
-    }
     document.getElementById('sideCardTelemetry').classList.remove('hidden');
+    if (inspectorState.active) { inspectorState.active = false; socket.emit('stop_inspector'); }
   }
+  refreshPanelPositions();
 }
 
 /* MAVLink Inspector */
@@ -1762,6 +2039,16 @@ socket.on('mavlink_raw', (data) => {
     inspectorState.messages.splice(0, inspectorState.messages.length - 500);
   }
   renderInspector();
+});
+
+socket.on('inspector_status', (data) => {
+  inspectorState.active = data.active;
+});
+
+socket.on('fence_breach_status', (data) => {
+  if (data.breach_type === 0 && data.breach_count === 0) {
+    notify('Fence breach cleared', 'info');
+  }
 });
 
 function toggleInspectorPause() {
@@ -1821,13 +2108,7 @@ function escapeHtml(s) {
 }
 
 /* ---- Bearing/Distance Waypoint Tool ---- */
-function toggleBrgPanel() {
-  var panel = document.getElementById('brgPanel');
-  var btn = document.getElementById('brgBtn');
-  if (!panel) return;
-  var show = panel.classList.toggle('hidden');
-  if (btn) btn.classList.toggle('active', show);
-}
+function toggleBrgPanel() { _togglePanel('brgPanel'); }
 
 function destFromBearing(lat, lon, brgDeg, distMeters) {
   var R = 6371000;
@@ -1879,13 +2160,7 @@ function addBrgWaypoint() {
 }
 
 /* ---- DMS Conversion Tool ---- */
-function toggleDmsPanel() {
-  var panel = document.getElementById('dmsPanel');
-  var btn = document.getElementById('dmsBtn');
-  if (!panel) return;
-  var show = panel.classList.toggle('hidden');
-  if (btn) btn.classList.toggle('active', show);
-}
+function toggleDmsPanel() { _togglePanel('dmsPanel'); }
 
 function ddToDms(dd) {
   var sign = dd < 0 ? -1 : 1;
@@ -1930,13 +2205,7 @@ function convertToDd() {
 /* ---- Geofence Tool ---- */
 window._fenceState = { polygons: [], circles: [] };
 
-function toggleFencePanel() {
-  var panel = document.getElementById('fencePanel');
-  var btn = document.getElementById('fenceBtn');
-  if (!panel) return;
-  var show = panel.classList.toggle('hidden');
-  if (btn) btn.classList.toggle('active', show);
-}
+function toggleFencePanel() { _togglePanel('fencePanel'); }
 
 function renderFenceTable() {
   var fs = window._fenceState;
@@ -2226,6 +2495,60 @@ function renderTargetMarkers() {
   });
 }
 
+function updatePrearmChecklist(data) {
+  var list = document.getElementById('prearmList');
+  var overall = document.getElementById('prearmOverall');
+  if (!list || !overall) return;
+
+  var c = !!data.connected;
+  var fix = data.fix_type || 0;
+  var sats = data.satellites || 0;
+  var hdop = data.hdop || 99.99;
+  var volt = data.battery_voltage || 0;
+  var armed = !!data.armed;
+  var mode = data.mode || '---';
+
+  var ekfHPos = parseFloat(data.ekf_pos_horiz_variance) || 0;
+  var ekfVPos = parseFloat(data.ekf_pos_vert_variance) || 0;
+  var ekfVel = parseFloat(data.ekf_vel_variance) || 0;
+  var ekfMag = parseFloat(data.ekf_compass_variance) || 0;
+
+  var checks = [];
+
+  function addCheck(name, pass, detail) {
+    checks.push({ name: name, pass: pass, detail: detail || '' });
+  }
+
+  addCheck('Connected', c, c ? 'Yes' : 'No connection');
+  addCheck('GPS 3D Fix', fix >= 3, fix + 'D Fix');
+  addCheck('Satellites', sats >= 6, sats + ' sats');
+  addCheck('HDOP', hdop < 2.0, hdop.toFixed(1));
+  addCheck('Battery', volt > 10.5, volt.toFixed(1) + 'V');
+  addCheck('EKF H-Pos', ekfHPos < 1.0, ekfHPos.toFixed(3));
+  addCheck('EKF V-Pos', ekfVPos < 1.0, ekfVPos.toFixed(3));
+  addCheck('EKF Vel', ekfVel < 1.0, ekfVel.toFixed(3));
+  addCheck('EKF Mag', ekfMag < 1.0, ekfMag.toFixed(3));
+  addCheck('Not Armed', !armed, armed ? 'ARMED' : 'Disarmed');
+  addCheck('Flight Mode', mode !== '---' && mode !== 'INITIALISING', mode);
+
+  var passed = 0;
+  var h = '';
+  checks.forEach(function(ch) {
+    if (ch.pass) passed++;
+    var cls = ch.pass ? 'pass' : 'fail';
+    h += '<div class="prearm-item ' + cls + '">';
+    h += '<span class="prearm-icon">' + (ch.pass ? '&#x2713;' : '&#x2717;') + '</span>';
+    h += '<span class="prearm-name">' + ch.name + '</span>';
+    h += '<span class="prearm-detail">' + ch.detail + '</span>';
+    h += '</div>';
+  });
+  list.innerHTML = h;
+
+  var allPass = passed === checks.length && c;
+  overall.className = 'prearm-overall ' + (allPass ? 'pass' : 'fail');
+  overall.textContent = allPass ? '\u2713 READY TO ARM' : passed + '/' + checks.length + ' checks passed';
+}
+
 function updateTargetDistPanel(data) {
   var panel = document.getElementById('targetDistPanel');
   var list = document.getElementById('targetDistList');
@@ -2402,7 +2725,7 @@ function restoreAppState() {
   try {
     if (sessionStorage.getItem('sgc_was_connected') === '1') {
       var btn = document.getElementById('connectBtn');
-      if (btn) { btn.textContent = '\u25CF Connected'; btn.classList.add('connected'); btn.disabled = false; btn.style.opacity = '1'; btn.style.cursor = 'pointer'; }
+      if (btn) { btn.textContent = '\u25CF Connected'; btn.classList.add('connected'); btn.disabled = false; }
     }
   } catch(e) {}
 

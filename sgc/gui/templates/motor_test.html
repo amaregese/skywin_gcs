@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Motor Test</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=13" />
+  <style>
+    body { overflow: hidden; }
+    #main { flex-direction: column; }
+
+    .mt-wrap { flex: 1; overflow-y: auto; padding: 20px 24px; display: flex; gap: 20px; }
+
+    .mt-left { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .mt-right { width: 340px; flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; }
+
+    .mt-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      overflow: hidden;
+    }
+    .mt-card-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px; background: #252f3f;
+      border-bottom: 1px solid #334155;
+    }
+    .mt-card-header .icon { font-size: 16px; }
+    .mt-card-header .title { color: #e2e8f0; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
+    .mt-card-header .sub { color: #64748b; font-size: 11px; margin-left: auto; }
+    .mt-card-body { padding: 14px 16px; }
+
+    .mt-info-row { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+    .mt-info-row + .mt-info-row { border-top: 1px solid #1a2332; }
+    .mt-info-label { color: #64748b; font-size: 11px; font-weight: 600; width: 80px; flex-shrink: 0; }
+    .mt-info-val { color: #e2e8f0; font-size: 12px; font-weight: 500; }
+    .mt-info-val.warn { color: #eab308; }
+    .mt-info-val.good { color: #22c55e; }
+    .mt-info-val.danger { color: #ef4444; }
+
+    .mt-diagram {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+      padding: 8px;
+    }
+    .mt-motor-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 10px 4px; border-radius: 8px; cursor: pointer;
+      background: #0f172a; border: 2px solid #334155;
+      color: #64748b; font-size: 10px; font-weight: 700;
+      transition: all 0.15s; user-select: none;
+    }
+    .mt-motor-btn:hover { border-color: #6366f1; background: rgba(99,102,241,0.08); color: #a5b4fc; }
+    .mt-motor-btn.active { border-color: #eab308; background: rgba(234,179,8,0.1); color: #eab308; }
+    .mt-motor-btn.running { border-color: #22c55e; background: rgba(34,197,94,0.12); color: #22c55e; animation: mtPulse 0.8s ease-in-out infinite; }
+    .mt-motor-btn .mt-motor-num { font-size: 13px; }
+    .mt-motor-btn .mt-motor-icon { font-size: 18px; line-height: 1; }
+
+    @keyframes mtPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+      50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+    }
+
+    .mt-control-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+    }
+    .mt-control-row:last-child { margin-bottom: 0; }
+    .mt-control-label {
+      color: #94a3b8; font-size: 11px; font-weight: 600; width: 60px; flex-shrink: 0;
+    }
+    .mt-select {
+      flex: 1; background: #0f172a; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 6px;
+      padding: 7px 10px; font-size: 12px; font-weight: 600; outline: none;
+      font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+    }
+    .mt-select:focus { border-color: #7c3aed; }
+    .mt-slider-group { flex: 1; display: flex; align-items: center; gap: 8px; }
+    .mt-slider {
+      flex: 1; height: 5px; appearance: none; -webkit-appearance: none;
+      background: #0f172a; border-radius: 3px; outline: none; cursor: pointer;
+    }
+    .mt-slider::-webkit-slider-thumb {
+      appearance: none; -webkit-appearance: none;
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #eab308; border: 2px solid #fff; cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+    }
+    .mt-slider::-moz-range-thumb {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #eab308; border: 2px solid #fff; cursor: pointer;
+    }
+    .mt-slider-val {
+      color: #eab308; font-size: 14px; font-weight: 800; min-width: 42px; text-align: right;
+      font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+    }
+    .mt-input {
+      width: 60px; background: #0f172a; color: #e2e8f0;
+      border: 1px solid #334155; border-radius: 6px;
+      padding: 7px 8px; font-size: 12px; font-weight: 600; outline: none;
+      font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+      text-align: center;
+    }
+    .mt-input:focus { border-color: #7c3aed; }
+    .mt-unit { color: #64748b; font-size: 11px; font-weight: 600; }
+
+    .mt-btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    .mt-btn {
+      flex: 1; border: none; border-radius: 8px; padding: 10px 16px;
+      font-size: 13px; font-weight: 700; cursor: pointer; letter-spacing: 0.5px;
+      transition: all 0.12s; text-transform: uppercase;
+    }
+    .mt-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mt-btn-primary { background: #22c55e; color: #052e16; }
+    .mt-btn-primary:hover:not(:disabled) { background: #16a34a; }
+    .mt-btn-danger { background: #ef4444; color: #fff; }
+    .mt-btn-danger:hover:not(:disabled) { background: #dc2626; }
+    .mt-btn-warning { background: #eab308; color: #422006; }
+    .mt-btn-warning:hover:not(:disabled) { background: #d97706; }
+
+    .mt-status-box {
+      padding: 10px 14px; border-radius: 8px; font-size: 12px; font-weight: 700;
+      text-align: center; letter-spacing: 0.5px; transition: all 0.15s;
+    }
+    .mt-status-box.idle { background: #0f172a; color: #64748b; border: 1px solid #334155; }
+    .mt-status-box.running { background: rgba(234,179,8,0.12); color: #eab308; border: 1px solid rgba(234,179,8,0.25); }
+    .mt-status-box.success { background: rgba(34,197,94,0.12); color: #22c55e; border: 1px solid rgba(34,197,94,0.25); }
+    .mt-status-box.stopped { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); }
+
+    .mt-log {
+      flex: 1; min-height: 0; overflow-y: auto;
+      font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace;
+      font-size: 10px; line-height: 1.6; color: #94a3b8;
+    }
+    .mt-log-entry { padding: 3px 14px; display: flex; gap: 8px; align-items: flex-start; }
+    .mt-log-entry:hover { background: rgba(51,65,85,0.15); }
+    .mt-log-time { color: #475569; flex-shrink: 0; }
+    .mt-log-msg { flex: 1; min-width: 0; word-break: break-word; }
+    .mt-log-msg.info { color: #94a3b8; }
+    .mt-log-msg.success { color: #4ade80; }
+    .mt-log-msg.warning { color: #facc15; }
+    .mt-log-msg.error { color: #f87171; }
+    .mt-log-empty {
+      display: flex; align-items: center; justify-content: center;
+      height: 80px; color: #334155; font-size: 11px; font-style: italic;
+    }
+
+    .mt-safety {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 14px; border-radius: 8px; font-size: 11px;
+    }
+    .mt-safety.warn { background: rgba(234,179,8,0.1); color: #eab308; border: 1px solid rgba(234,179,8,0.2); }
+    .mt-safety.ok { background: rgba(34,197,94,0.1); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
+    .mt-safety.danger { background: rgba(239,68,68,0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
+    .mt-safety-icon { font-size: 14px; flex-shrink: 0; }
+
+    @media (max-width: 900px) {
+      .mt-wrap { flex-direction: column; }
+      .mt-right { width: auto; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topBar">
+      <img src="/logo.png" id="topLogo" alt="SWL">
+    </div>
+    <div id="toolbar">
+      <div class="tb-top">
+        <span class="tb-brand-acronym">
+          <svg viewBox="0 0 28 28" width="22" height="22" class="tb-brand-icon">
+            <defs>
+              <linearGradient id="gcsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+              <linearGradient id="gcsGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="none" stroke="url(#gcsGrad)" stroke-width="1.5" opacity="0.25"/>
+            <circle cx="14" cy="14" r="9" fill="none" stroke="url(#gcsGrad)" stroke-width="1.2" opacity="0.35"/>
+            <circle cx="14" cy="14" r="5" fill="none" stroke="url(#gcsGrad)" stroke-width="1" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2.5" fill="url(#gcsGrad)" opacity="0.8"/>
+            <line x1="14" y1="0" x2="14" y2="6" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="14" y1="22" x2="14" y2="28" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="0" y1="14" x2="6" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="22" y1="14" x2="28" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <path d="M8 5.5c-4 2.5-6 7-6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M20 5.5c4 2.5 6 7 6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M6 20c2 3 5 5 8 5s6-2 8-5" stroke="url(#gcsGrad)" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.25"/>
+          </svg>
+          SGC
+        </span>
+        <span class="tb-software-name">SKYWIN GROUND CONTROL STATION</span>
+      </div>
+      <div class="tb-sep-h"></div>
+      <div class="tb-bottom">
+        <button class="toolbar-back" onclick="location.href='/'" title="Back to Home">&#8592;</button>
+        <div id="tbHamburger" onclick="toggleToolbarMenu()">
+          <span></span><span></span><span></span>
+        </div>
+        <div id="tbMenu">
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📁</span> FILE</div>
+          <button class="tb-menu-btn" onclick="menuAction('New Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📄</span> New Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Open Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📂</span> Open Mission...</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission As');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission As...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📤</span> Export Log...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Exit');toggleToolbarMenu()"><span class="tb-menu-btn-icon">🚪</span> Exit</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">🗺️</span> FLIGHT PLAN</div>
+          <button class="tb-menu-btn" onclick="location.href='/plan'"><span class="tb-menu-btn-icon">✈️</span> Waypoints</button>
+          <button class="tb-menu-btn" onclick="location.href='/survey'"><span class="tb-menu-btn-icon">📡</span> Survey Grid</button>
+          <button class="tb-menu-btn" onclick="location.href='/fence'"><span class="tb-menu-btn-icon">🛡️</span> Geo-Fence</button>
+          <button class="tb-menu-btn" onclick="location.href='/rally'"><span class="tb-menu-btn-icon">📍</span> Rally Points</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">⚙️</span> CONFIG</div>
+          <button class="tb-menu-btn" onclick="location.href='/config'"><span class="tb-menu-btn-icon">🔧</span> Calibration</button>
+          <button class="tb-menu-btn" onclick="location.href='/params'"><span class="tb-menu-btn-icon">📋</span> Full Parameters</button>
+          <button class="tb-menu-btn" onclick="location.href='/tuning'"><span class="tb-menu-btn-icon">🎛️</span> Tuning</button>
+          <button class="tb-menu-btn" onclick="location.href='/motor_test'"><span class="tb-menu-btn-icon">🔄</span> Motor Test</button>
+          <button class="tb-menu-btn" onclick="location.href='/rc_override'"><span class="tb-menu-btn-icon">🎮</span> RC Override</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()"><span class="tb-menu-btn-icon">⚙️</span> App Settings...</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📋</span> LOGS</div>
+          <button class="tb-menu-btn" onclick="menuAction('Telemetry Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📊</span> Telemetry Logs</button>
+          <button class="tb-menu-btn" onclick="menuAction('DataFlash Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📀</span> DataFlash Logs</button>
+          <button class="tb-menu-btn" onclick="toggleConsole();toggleToolbarMenu()"><span class="tb-menu-btn-icon">💻</span> Console</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">❓</span> HELP</div>
+          <button class="tb-menu-btn" onclick="menuAction('About');toggleToolbarMenu()"><span class="tb-menu-btn-icon">ℹ️</span> About SGC</button>
+        </div>
+        <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
+        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; DATA LOG</button>
+      </div>
+    </div>
+
+    <div id="main">
+      <div class="mt-wrap">
+        <div class="mt-left">
+          <div class="mt-card">
+            <div class="mt-card-header">
+              <span class="icon">&#x2699;</span>
+              <span class="title">Motor Layout</span>
+              <span class="sub">Click a motor to select it</span>
+            </div>
+            <div class="mt-card-body">
+              <div class="mt-diagram" id="motorDiagram">
+                <div class="mt-motor-btn" data-motor="1" onclick="selectMotor(1)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M1</span></div>
+                <div class="mt-motor-btn" data-motor="2" onclick="selectMotor(2)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M2</span></div>
+                <div class="mt-motor-btn" data-motor="3" onclick="selectMotor(3)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M3</span></div>
+                <div class="mt-motor-btn" data-motor="4" onclick="selectMotor(4)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M4</span></div>
+                <div class="mt-motor-btn" data-motor="5" onclick="selectMotor(5)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M5</span></div>
+                <div class="mt-motor-btn" data-motor="6" onclick="selectMotor(6)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M6</span></div>
+                <div class="mt-motor-btn" data-motor="7" onclick="selectMotor(7)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M7</span></div>
+                <div class="mt-motor-btn" data-motor="8" onclick="selectMotor(8)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M8</span></div>
+                <div class="mt-motor-btn" data-motor="9" onclick="selectMotor(9)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M9</span></div>
+                <div class="mt-motor-btn" data-motor="10" onclick="selectMotor(10)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M10</span></div>
+                <div class="mt-motor-btn" data-motor="11" onclick="selectMotor(11)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M11</span></div>
+                <div class="mt-motor-btn" data-motor="12" onclick="selectMotor(12)"><span class="mt-motor-icon">&#x1F504;</span><span class="mt-motor-num">M12</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-card">
+            <div class="mt-card-header">
+              <span class="icon">&#x1F4BB;</span>
+              <span class="title">Motor Test Log</span>
+              <span class="sub"><button class="mt-btn" style="padding:4px 12px;font-size:10px;border-radius:4px;background:transparent;border:1px solid #475569;color:#94a3b8;cursor:pointer" onclick="clearMtLog()">Clear</button></span>
+            </div>
+            <div class="mt-card-body" style="padding:0">
+              <div id="mtLog" class="mt-log">
+                <div class="mt-log-empty">Motor test events will appear here</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-right">
+          <div class="mt-card">
+            <div class="mt-card-header">
+              <span class="icon">&#x2699;</span>
+              <span class="title">Motor Controls</span>
+              <span class="sub" id="selectedMotorDisplay">M1</span>
+            </div>
+            <div class="mt-card-body">
+              <div class="mt-control-row">
+                <span class="mt-control-label">Motor</span>
+                <select id="mtMotorSelect" class="mt-select" onchange="onMotorSelectChange()">
+                  <option value="1">Motor 1</option><option value="2">Motor 2</option>
+                  <option value="3">Motor 3</option><option value="4">Motor 4</option>
+                  <option value="5">Motor 5</option><option value="6">Motor 6</option>
+                  <option value="7">Motor 7</option><option value="8">Motor 8</option>
+                  <option value="9">Motor 9</option><option value="10">Motor 10</option>
+                  <option value="11">Motor 11</option><option value="12">Motor 12</option>
+                </select>
+              </div>
+
+              <div class="mt-control-row">
+                <span class="mt-control-label">Throttle</span>
+                <div class="mt-slider-group">
+                  <input id="mtThrottle" class="mt-slider" type="range" min="0" max="100" value="10" oninput="updateMtThrottleDisplay()">
+                  <span id="mtThrottleVal" class="mt-slider-val">10%</span>
+                </div>
+              </div>
+
+              <div class="mt-control-row">
+                <span class="mt-control-label">Duration</span>
+                <input id="mtDuration" class="mt-input" type="number" min="1" max="60" value="3">
+                <span class="mt-unit">seconds</span>
+              </div>
+
+              <div class="mt-control-row">
+                <span class="mt-control-label">Type</span>
+                <select id="mtTestType" class="mt-select">
+                  <option value="0">Throttle</option>
+                  <option value="1">Ordered</option>
+                  <option value="2">Step</option>
+                  <option value="3">Boost</option>
+                </select>
+              </div>
+
+              <div class="mt-btn-row">
+                <button id="mtStartBtn" class="mt-btn mt-btn-warning" onclick="startMotorTest()">&#x25B6; Test Motor</button>
+                <button id="mtStopBtn" class="mt-btn mt-btn-danger" onclick="stopMotorTest()" disabled>&#x25A0; Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-card">
+            <div class="mt-card-header">
+              <span class="icon">&#x2139;</span>
+              <span class="title">Status</span>
+            </div>
+            <div class="mt-card-body">
+              <div id="mtStatusBox" class="mt-status-box idle">Ready — select a motor and configure test parameters</div>
+            </div>
+          </div>
+
+          <div class="mt-card">
+            <div class="mt-card-header">
+              <span class="icon">&#x26A0;</span>
+              <span class="title">Safety</span>
+            </div>
+            <div class="mt-card-body">
+              <div id="mtSafetyConnected" class="mt-safety danger">
+                <span class="mt-safety-icon">&#x26A0;</span>
+                <span>Not connected to vehicle</span>
+              </div>
+              <div id="mtSafetyArmed" class="mt-safety danger" style="margin-top:6px">
+                <span class="mt-safety-icon">&#x26A0;</span>
+                <span>Vehicle must be DISARMED to test motors</span>
+              </div>
+              <div id="mtSafetyProp" class="mt-safety warn" style="margin-top:6px">
+                <span class="mt-safety-icon">&#x26A0;</span>
+                <span>Ensure propellers are removed before testing</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="notifContainer"></div>
+  <script src="/static/lib/socket.io.min.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.7.2/socket.io.min.js'"></script>
+  <script src="/static/js/toolbar.js?v=13"></script>
+  <script src="/static/js/motor_test.js?v=1"></script>
+</body>
+</html>

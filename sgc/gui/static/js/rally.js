@@ -56,7 +56,7 @@ function initMap(lat, lon) {
   var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '&copy; OpenTopoMap' });
   var dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19, attribution: '&copy; CARTO' });
 
-  osm.addTo(map);
+  sat.addTo(map);
 
   rallyGroup = L.layerGroup().addTo(map);
 
