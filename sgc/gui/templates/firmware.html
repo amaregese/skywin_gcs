@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Firmware Installer</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <style>
+    .fw-layout { display: flex; flex-direction: column; flex: 1; overflow: hidden; }
+    .fw-content { display: flex; flex-direction: column; overflow: hidden; min-width: 0; flex: 1; }
+    .fw-header { padding: 12px 16px; border-bottom: 1px solid #1e293b; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+    .fw-title { font-size: 15px; font-weight: 800; color: #e2e8f0; display: flex; align-items: center; gap: 10px; }
+    .fw-actions { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    .fw-btn { background: #334155; border: none; color: #e2e8f0; padding: 6px 12px; font-size: 10px; font-weight: 700; border-radius: 6px; cursor: pointer; transition: all 0.12s; letter-spacing: 0.3px; display: flex; align-items: center; gap: 4px; font-family: inherit; }
+    .fw-btn:hover { filter: brightness(1.15); }
+    .fw-btn-primary { background: linear-gradient(135deg, #4CAF50, #388E3C); color: #fff; }
+    .fw-btn-primary:hover { filter: brightness(1.1); }
+    .fw-btn-danger { background: #ef4444; color: #fff; }
+    .fw-btn-danger:hover { background: #dc2626; }
+    .fw-btn-outline { background: transparent; border: 1px solid #334155; color: #94a3b8; }
+    .fw-btn-outline:hover { border-color: #64748b; color: #e2e8f0; }
+
+    .fw-cards-grid { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+    .fw-frame-tabs { display: flex; gap: 4px; padding: 8px 16px; flex-wrap: wrap; background: #0f172a; border-bottom: 1px solid #1e293b; overflow-x: auto; flex-shrink: 0; }
+    .fw-frame-tab { font-size: 11px; font-weight: 700; color: #64748b; background: transparent; border: 1px solid #334155; border-radius: 8px; padding: 5px 12px; cursor: pointer; transition: all 0.12s; white-space: nowrap; }
+    .fw-frame-tab:hover { border-color: #818cf8; color: #e2e8f0; background: rgba(129,140,248,0.05); }
+    .fw-frame-tab.active { background: #4CAF50; border-color: #4CAF50; color: #fff; }
+    .fw-board-area { flex: 1; overflow-y: auto; padding: 8px 16px; }
+    .fw-board-list { display: flex; flex-direction: column; gap: 2px; }
+    .fw-board-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 6px; cursor: pointer; transition: all 0.12s; background: #1e293b; border: 1px solid transparent; font-size: 11px; }
+    .fw-board-item:hover { border-color: #334155; background: #1a2332; }
+    .fw-board-item.selected { border-color: #4CAF50; background: rgba(76,175,80,0.1); }
+    .fw-board-name { color: #e2e8f0; font-weight: 600; flex: 1; font-family: 'SF Mono','Consolas','JetBrains Mono',monospace; font-size: 11px; }
+    .fw-board-version { color: #4CAF50; font-weight: 600; font-size: 10px; flex-shrink: 0; }
+    .fw-board-category { font-size: 9px; color: #64748b; font-weight: 600; margin-left: auto; letter-spacing: 0.5px; text-transform: uppercase; flex-shrink: 0; }
+    .fw-board-toggle { font-size: 10px; color: #818cf8; font-weight: 600; cursor: pointer; padding: 6px 8px; text-align: center; border-radius: 4px; transition: all 0.12s; }
+    .fw-board-toggle:hover { background: rgba(129,140,248,0.1); }
+
+    .fw-search-bar { padding: 0 16px 8px; flex-shrink: 0; }
+    .fw-search-input { width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 12px; outline: none; font-family: inherit; box-sizing: border-box; transition: border-color 0.12s; }
+    .fw-search-input:focus { border-color: #4CAF50; }
+    .fw-search-input::placeholder { color: #475569; }
+
+    .fw-cat-bar { display: flex; gap: 4px; padding: 0 24px 8px; flex-wrap: wrap; }
+    .fw-cat-btn { font-size: 10px; font-weight: 700; color: #64748b; background: transparent; border: 1px solid #334155; border-radius: 12px; padding: 3px 12px; cursor: pointer; transition: all 0.12s; letter-spacing: 0.5px; text-transform: uppercase; }
+    .fw-cat-btn:hover { border-color: #4CAF50; color: #e2e8f0; }
+    .fw-cat-btn.active { background: #4CAF50; border-color: #4CAF50; color: #fff; }
+
+    .fw-selection-bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px; background: #1e293b; border-bottom: 1px solid #334155; flex-shrink: 0; }
+    .fw-selection-label { font-size: 11px; color: #94a3b8; font-weight: 600; }
+    .fw-selection-value { color: #4CAF50; font-family: 'SF Mono','Consolas','JetBrains Mono',monospace; font-weight: 700; }
+    .fw-flash-btn { padding: 8px 20px; font-size: 12px; margin-left: auto; }
+    .fw-port-input { width: 56px; padding: 6px 8px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #e2e8f0; font-size: 11px; outline: none; font-family: 'SF Mono','Consolas','JetBrains Mono',monospace; text-align: center; transition: border-color 0.12s; }
+    .fw-port-input:focus { border-color: #4CAF50; }
+    .fw-port-input::placeholder { color: #475569; }
+
+    .fw-status-bar { display: flex; align-items: center; gap: 0; background: #1e293b; border-top: 1px solid #334155; padding: 0; flex-shrink: 0; overflow: hidden; }
+    .fw-status-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 12px; border-right: 1px solid #1a2332; gap: 2px; min-width: 0; }
+    .fw-status-item:last-child { border-right: none; }
+    .fw-status-label { font-size: 8px; color: #64748b; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; }
+    .fw-status-bar-track { width: 100%; height: 4px; background: #0f172a; border-radius: 2px; overflow: hidden; margin: 2px 0; }
+    .fw-status-bar-fill { height: 100%; width: 0%; border-radius: 2px; transition: width 0.3s; }
+    .fw-status-bar-fill.progress { background: linear-gradient(90deg, #2196F3, #4CAF50); }
+    .fw-status-bar-fill.complete { background: #4CAF50; }
+    .fw-status-bar-fill.error { background: #ef4444; }
+    .fw-status-pct { font-size: 11px; font-weight: 700; color: #e2e8f0; font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace; }
+
+    .fw-detection-panel { background: #1e293b; border: 1px solid #334155; border-radius: 10px; margin: 0 24px 12px; padding: 12px 16px; }
+    .fw-detection-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .fw-detection-title { font-size: 11px; font-weight: 700; color: #a5b4fc; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+    .fw-detection-list { display: flex; flex-direction: column; gap: 4px; }
+    .fw-detection-item { display: flex; align-items: center; gap: 10px; padding: 6px 10px; background: #0f172a; border-radius: 6px; font-size: 12px; }
+    .fw-detection-item-icon { font-size: 14px; }
+    .fw-detection-port { color: #818cf8; font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace; font-size: 11px; }
+    .fw-detection-board { color: #e2e8f0; font-weight: 700; flex: 1; }
+    .fw-detection-bootloader { font-size: 9px; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+    .fw-detection-bootloader.yes { background: rgba(234,179,8,0.15); color: #facc15; }
+    .fw-detection-bootloader.no { background: rgba(34,197,94,0.1); color: #4ade80; }
+
+    .fw-panel-hidden { display: none !important; }
+
+    .fw-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 10000; backdrop-filter: blur(4px); }
+    .fw-modal-content { background: #1e293b; border: 1px solid #334155; border-radius: 14px; width: 560px; max-width: 92vw; max-height: 85vh; overflow-y: auto; box-shadow: 0 24px 64px rgba(0,0,0,0.6); animation: connIn 0.2s ease-out; }
+    .fw-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid #1e293b; font-size: 15px; font-weight: 700; color: #e2e8f0; }
+    .fw-modal-close { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #64748b; cursor: pointer; border-radius: 6px; transition: all 0.12s; }
+    .fw-modal-close:hover { color: #f87171; background: rgba(248,113,113,0.1); }
+    .fw-modal-body { padding: 20px; }
+    .fw-modal-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #1e293b; }
+
+    .fw-progress-section { margin-bottom: 16px; }
+    .fw-progress-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; }
+    .fw-progress-track { height: 6px; background: #0f172a; border-radius: 3px; overflow: hidden; }
+    .fw-progress-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 0.3s; }
+    .fw-progress-fill.download { background: linear-gradient(90deg, #2196F3, #4CAF50); }
+    .fw-progress-fill.flash { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+    .fw-progress-fill.verify { background: linear-gradient(90deg, #4CAF50, #2196F3); }
+
+    .fw-log { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 12px; max-height: 160px; overflow-y: auto; font-family: 'SF Mono', 'Consolas', 'JetBrains Mono', monospace; font-size: 10px; user-select: text; }
+    .fw-log-entry { color: #94a3b8; padding: 2px 0; line-height: 1.4; }
+    .fw-log-entry.success { color: #4ade80; }
+    .fw-log-entry.error { color: #f87171; }
+    .fw-log-entry.info { color: #38bdf8; }
+    .fw-log-entry.warning { color: #facc15; }
+
+    .fw-upload-zone { border: 2px dashed #334155; border-radius: 10px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .fw-upload-zone:hover { border-color: #4CAF50; background: rgba(76,175,80,0.04); }
+    .fw-upload-zone.dragover { border-color: #4CAF50; background: rgba(76,175,80,0.08); }
+    .fw-upload-icon { font-size: 36px; opacity: 0.5; margin-bottom: 8px; }
+    .fw-upload-text { font-size: 13px; color: #94a3b8; }
+    .fw-upload-hint { font-size: 10px; color: #475569; margin-top: 4px; }
+
+    .fw-recovery-steps { display: flex; flex-direction: column; gap: 8px; }
+    .fw-recovery-step { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: #0f172a; border-radius: 8px; border: 1px solid #1e293b; }
+    .fw-recovery-step.completed { border-color: rgba(76,175,80,0.3); background: rgba(76,175,80,0.04); }
+    .fw-recovery-step-number { width: 24px; height: 24px; border-radius: 50%; background: #334155; color: #94a3b8; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+    .fw-recovery-step.completed .fw-recovery-step-number { background: #4CAF50; color: #fff; }
+    .fw-recovery-step-text { flex: 1; font-size: 12px; color: #e2e8f0; }
+    .fw-recovery-step-status { font-size: 10px; color: #64748b; }
+    .fw-recovery-step.completed .fw-recovery-step-status { color: #4CAF50; }
+
+    .fw-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; color: #475569; gap: 12px; }
+    .fw-empty-icon { font-size: 48px; opacity: 0.4; }
+    .fw-empty-text { font-size: 14px; font-weight: 600; }
+    .fw-empty-hint { font-size: 11px; }
+
+    .fw-info-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .fw-info-box { flex: 1; min-width: 140px; background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; }
+    .fw-info-label { font-size: 9px; color: #64748b; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 2px; }
+    .fw-info-value { font-size: 14px; font-weight: 700; color: #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topBar">
+      <img src="/logo.png" id="topLogo" alt="SWL">
+    </div>
+    <div id="toolbar">
+      <div class="tb-top">
+        <span class="tb-brand-acronym">
+          <svg viewBox="0 0 28 28" width="22" height="22" class="tb-brand-icon">
+            <defs><linearGradient id="gcsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient></defs>
+            <circle cx="14" cy="14" r="13" fill="none" stroke="url(#gcsGrad)" stroke-width="1.5" opacity="0.25"/>
+            <circle cx="14" cy="14" r="9" fill="none" stroke="url(#gcsGrad)" stroke-width="1.2" opacity="0.35"/>
+            <circle cx="14" cy="14" r="5" fill="none" stroke="url(#gcsGrad)" stroke-width="1" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2.5" fill="url(#gcsGrad)" opacity="0.8"/>
+          </svg>
+          SGC
+        </span>
+        <span class="tb-software-name">SKYWIN GROUND CONTROL STATION</span>
+      </div>
+      <div class="tb-sep-h"></div>
+      <div class="tb-bottom">
+        <button class="toolbar-back" onclick="location.href='/'">&#8592; Dashboard</button>
+      </div>
+    </div>
+
+    <div class="fw-layout">
+      <div class="fw-content" style="max-width:100%;">
+        <div class="fw-header">
+          <div class="fw-title">
+            <span>📦 Firmware Installer</span>
+          </div>
+          <div class="fw-actions">
+            <button class="fw-btn fw-btn-outline" onclick="detectBoard()">🔍 Detect</button>
+            <button class="fw-btn fw-btn-outline" onclick="openCustomFirmware()">📂 Custom</button>
+            <button class="fw-btn fw-btn-outline" onclick="openBootloaderRecovery()">🔄 Recovery</button>
+            <button class="fw-btn fw-btn-outline" onclick="refreshFirmwareCache()">🔄 Refresh</button>
+          </div>
+        </div>
+
+        <div id="fwDetectionPanel" class="fw-detection-panel fw-panel-hidden">
+          <div class="fw-detection-header">
+            <span class="fw-detection-title">🔍 Detected Flight Controllers</span>
+            <button class="fw-btn fw-btn-outline" onclick="detectBoard()" style="padding:4px 12px;font-size:10px;">Rescan</button>
+          </div>
+          <div id="fwDetectionList" class="fw-detection-list">
+            <div style="text-align:center;padding:12px;color:#64748b;font-size:12px;">Scanning for boards...</div>
+          </div>
+        </div>
+
+        <div class="fw-cat-bar">
+          <button class="fw-cat-btn active" data-cat="stable" onclick="switchCategory('stable')">Stable</button>
+          <button class="fw-cat-btn" data-cat="beta" onclick="switchCategory('beta')">Beta</button>
+          <button class="fw-cat-btn" data-cat="latest" onclick="switchCategory('latest')">Latest</button>
+          <button class="fw-cat-btn" data-cat="legacy" onclick="switchCategory('legacy')">Legacy</button>
+        </div>
+
+        <div class="fw-search-bar">
+          <input type="text" class="fw-search-input" id="fwSearchInput" placeholder="🔍 Search boards by name or type..." spellcheck="false" autocomplete="off">
+        </div>
+
+        <div class="fw-selection-bar">
+          <span class="fw-selection-label">Selected: <span id="fwSelectedBoard" class="fw-selection-value">none</span></span>
+          <input type="text" class="fw-port-input" id="fwPortInput" placeholder="COM5" spellcheck="false" title="Enter port to skip detection">
+          <button class="fw-btn fw-btn-primary fw-flash-btn" id="fwFlashBtn" onclick="startFlash()">⚡ Flash Firmware</button>
+        </div>
+
+        <div id="fwCardsGrid" class="fw-cards-grid"></div>
+
+        <div id="fwEmptyState" class="fw-empty-state">
+          <div class="fw-empty-icon">📦</div>
+          <div class="fw-empty-text">No firmware available</div>
+          <div class="fw-empty-hint">Click "Refresh" to fetch firmware from repositories</div>
+        </div>
+
+        <div class="fw-status-bar">
+          <div class="fw-status-item">
+            <span class="fw-status-label">Download</span>
+            <div class="fw-status-bar-track"><div class="fw-status-bar-fill" id="fwDownloadFill" style="width:0%"></div></div>
+            <span class="fw-status-pct" id="fwDownloadPct">0%</span>
+          </div>
+          <div class="fw-status-item">
+            <span class="fw-status-label">Flash</span>
+            <div class="fw-status-bar-track"><div class="fw-status-bar-fill" id="fwFlashFill" style="width:0%"></div></div>
+            <span class="fw-status-pct" id="fwFlashPct">0%</span>
+          </div>
+          <div class="fw-status-item">
+            <span class="fw-status-label">Verify</span>
+            <div class="fw-status-bar-track"><div class="fw-status-bar-fill" id="fwVerifyFill" style="width:0%"></div></div>
+            <span class="fw-status-pct" id="fwVerifyPct">0%</span>
+          </div>
+          <div class="fw-status-item">
+            <span class="fw-status-label">Status</span>
+            <span class="fw-status-pct" id="fwStatusText" style="font-size:10px;color:#64748b;">Ready</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="fwFlashModal" class="fw-modal fw-panel-hidden">
+      <div class="fw-modal-content">
+        <div class="fw-modal-header">
+          <span>⚡ Flashing Firmware</span>
+          <span class="fw-modal-close" onclick="closeFlashModal()">&times;</span>
+        </div>
+        <div class="fw-modal-body">
+          <div class="fw-info-row">
+            <div class="fw-info-box">
+              <div class="fw-info-label">Board</div>
+              <div class="fw-info-value" id="fwFlashBoard">---</div>
+            </div>
+            <div class="fw-info-box">
+              <div class="fw-info-label">Firmware</div>
+              <div class="fw-info-value" id="fwFlashFirmware">---</div>
+            </div>
+            <div class="fw-info-box">
+              <div class="fw-info-label">Port</div>
+              <div class="fw-info-value" id="fwFlashPort">---</div>
+            </div>
+          </div>
+
+          <div class="fw-progress-section">
+            <div class="fw-progress-label">
+              <span>⬇️ Download</span>
+              <span id="fwDownloadLabel">Waiting...</span>
+            </div>
+            <div class="fw-progress-track">
+              <div class="fw-progress-fill download" id="fwDownloadProgress" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="fw-progress-section">
+            <div class="fw-progress-label">
+              <span>⚡ Flash</span>
+              <span id="fwFlashLabel">Waiting...</span>
+            </div>
+            <div class="fw-progress-track">
+              <div class="fw-progress-fill flash" id="fwFlashProgress" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="fw-progress-section">
+            <div class="fw-progress-label">
+              <span>✅ Verify</span>
+              <span id="fwVerifyLabel">Waiting...</span>
+            </div>
+            <div class="fw-progress-track">
+              <div class="fw-progress-fill verify" id="fwVerifyProgress" style="width:0%"></div>
+            </div>
+          </div>
+
+          <div class="fw-progress-section">
+            <div class="fw-progress-label"><span>📋 Log</span></div>
+            <div id="fwFlashLog" class="fw-log"></div>
+          </div>
+        </div>
+        <div class="fw-modal-footer">
+          <button class="fw-btn fw-btn-danger" onclick="abortFlash()">Abort</button>
+          <button class="fw-btn fw-btn-outline" onclick="closeFlashModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fwCustomModal" class="fw-modal fw-panel-hidden">
+      <div class="fw-modal-content">
+        <div class="fw-modal-header">
+          <span>📂 Upload Custom Firmware</span>
+          <span class="fw-modal-close" onclick="closeCustomModal()">&times;</span>
+        </div>
+        <div class="fw-modal-body">
+          <div class="fw-upload-zone" id="fwUploadZone" onclick="document.getElementById('fwFileInput').click()">
+            <div class="fw-upload-icon">📂</div>
+            <div class="fw-upload-text">Click to select or drag firmware file here</div>
+            <div class="fw-upload-hint">Supported: .apj, .hex, .bin, .px4</div>
+          </div>
+          <input type="file" id="fwFileInput" accept=".apj,.hex,.bin,.px4" style="display:none" onchange="handleCustomFile(this)">
+          <div id="fwCustomInfo" class="fw-info-row" style="margin-top:12px;display:none;"></div>
+        </div>
+        <div class="fw-modal-footer">
+          <button class="fw-btn fw-btn-outline" onclick="closeCustomModal()">Cancel</button>
+          <button class="fw-btn fw-btn-primary" id="fwFlashCustomBtn" onclick="flashCustomFirmware()">⚡ Flash Custom</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="fwRecoveryModal" class="fw-modal fw-panel-hidden">
+      <div class="fw-modal-content">
+        <div class="fw-modal-header">
+          <span>🔄 Bootloader Recovery</span>
+          <span class="fw-modal-close" onclick="closeRecoveryModal()">&times;</span>
+        </div>
+        <div class="fw-modal-body">
+          <div class="fw-recovery-steps" id="fwRecoverySteps">
+            <div class="fw-recovery-step" data-step="1">
+              <span class="fw-recovery-step-number">1</span>
+              <span class="fw-recovery-step-text">Connect flight controller via USB</span>
+              <span class="fw-recovery-step-status" id="fwRecoveryStep1">Waiting...</span>
+            </div>
+            <div class="fw-recovery-step" data-step="2">
+              <span class="fw-recovery-step-number">2</span>
+              <span class="fw-recovery-step-text">Press and hold the safety button</span>
+              <span class="fw-recovery-step-status" id="fwRecoveryStep2">Waiting...</span>
+            </div>
+            <div class="fw-recovery-step" data-step="3">
+              <span class="fw-recovery-step-number">3</span>
+              <span class="fw-recovery-step-text">Reconnect USB while holding button</span>
+              <span class="fw-recovery-step-status" id="fwRecoveryStep3">Waiting...</span>
+            </div>
+            <div class="fw-recovery-step" data-step="4">
+              <span class="fw-recovery-step-number">4</span>
+              <span class="fw-recovery-step-text">Flash bootloader firmware</span>
+              <span class="fw-recovery-step-status" id="fwRecoveryStep4">Waiting...</span>
+            </div>
+          </div>
+          <div style="margin-top:12px;">
+            <div class="fw-progress-section">
+              <div class="fw-progress-label"><span>Recovery Log</span></div>
+              <div id="fwRecoveryLog" class="fw-log"></div>
+            </div>
+          </div>
+        </div>
+        <div class="fw-modal-footer">
+          <button class="fw-btn fw-btn-outline" onclick="closeRecoveryModal()">Close</button>
+          <button class="fw-btn fw-btn-primary" onclick="startBootloaderRecovery()">🔄 Start Recovery</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="notifContainer"></div>
+  </div>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/static/js/toolbar.js?v=13"></script>
+  <script src="/static/js/firmware.js?v=1"></script>
+</body>
+</html>

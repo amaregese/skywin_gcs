@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SGC - Compass Priority</title>
+  <link rel="stylesheet" href="/static/css/style.css?v=13" />
+  <style>
+    #main { flex-direction: column; }
+    .compass-wrap { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; justify-content: center; }
+    .compass-section {
+      background: #0f172a; border: 1px solid #334155; border-radius: 12px;
+      padding: 20px; width: 100%; max-width: 900px;
+    }
+    .compass-section h2 {
+      color: #e2e8f0; font-size: 16px; font-weight: 700; margin: 0 0 4px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .compass-section .sub { color: #64748b; font-size: 12px; margin: 0 0 16px; }
+    .compass-table { width: 100%; border-collapse: collapse; }
+    .compass-table th {
+      text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 700;
+      color: #64748b; letter-spacing: 0.5px; text-transform: uppercase;
+      border-bottom: 1px solid #334155; white-space: nowrap;
+    }
+    .compass-table td {
+      padding: 8px 10px; font-size: 12px; color: #e2e8f0;
+      border-bottom: 1px solid #1e293b; vertical-align: middle;
+    }
+    .compass-table tr:last-child td { border-bottom: none; }
+    .compass-table tr.dragging { opacity: 0.5; }
+    .compass-table tr.drag-over td { border-top: 2px solid #7c3aed; }
+    .compass-prio-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border-radius: 50%;
+      font-size: 13px; font-weight: 700;
+    }
+    .compass-prio-1 { background: rgba(99,102,241,0.2); color: #818cf8; }
+    .compass-prio-2 { background: rgba(124,58,237,0.2); color: #a78bfa; }
+    .compass-prio-3 { background: rgba(139,92,246,0.2); color: #c4b5fd; }
+    .compass-prio-other { background: rgba(51,65,85,0.3); color: #94a3b8; }
+    .compass-drg {
+      cursor: grab; color: #475569; font-size: 16px; padding: 0 4px;
+      user-select: none;
+    }
+    .compass-drg:active { cursor: grabbing; }
+    .compass-name { font-weight: 600; }
+    .compass-bus { font-size: 10px; color: #94a3b8; }
+    .compass-ext { font-size: 10px; font-weight: 600; }
+    .compass-ext.yes { color: #22c55e; }
+    .compass-ext.no { color: #64748b; }
+    .compass-health-dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+    }
+    .compass-health-dot.healthy { background: #22c55e; box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+    .compass-health-dot.warning { background: #eab308; box-shadow: 0 0 6px rgba(234,179,8,0.5); }
+    .compass-health-dot.unhealthy { background: #ef4444; box-shadow: 0 0 6px rgba(239,68,68,0.5); }
+    .compass-health-dot.unknown { background: #475569; }
+    .compass-enabled {
+      width: 18px; height: 18px; cursor: pointer; accent-color: #818cf8;
+    }
+    .compass-device-id { font-size: 10px; color: #64748b; font-family: 'SF Mono','Consolas',monospace; }
+    .health-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .health-card {
+      background: #1e293b; border: 1px solid #334155; border-radius: 10px;
+      padding: 14px;
+    }
+    .health-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .health-card-name { font-size: 13px; font-weight: 700; color: #e2e8f0; }
+    .health-card-prio { font-size: 10px; color: #64748b; margin-left: auto; }
+    .health-field { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; font-size: 11px; }
+    .health-field-label { color: #94a3b8; }
+    .health-field-value { color: #e2e8f0; font-weight: 600; font-family: 'SF Mono','Consolas',monospace; }
+    .health-field-value.good { color: #22c55e; }
+    .health-field-value.warn { color: #eab308; }
+    .health-field-value.bad { color: #ef4444; }
+    .warning-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(234,179,8,0.1); border: 1px solid rgba(234,179,8,0.3);
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;
+    }
+    .warning-banner-icon { font-size: 20px; color: #eab308; flex-shrink: 0; }
+    .warning-banner-text { flex: 1; font-size: 12px; color: #fde68a; line-height: 1.5; }
+    .error-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;
+    }
+    .error-banner-icon { font-size: 20px; color: #ef4444; flex-shrink: 0; }
+    .error-banner-text { flex: 1; font-size: 12px; color: #fca5a5; line-height: 1.5; }
+    .advisory-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(14,165,233,0.08); border: 1px solid rgba(14,165,233,0.2);
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;
+    }
+    .advisory-banner-icon { font-size: 20px; color: #38bdf8; flex-shrink: 0; }
+    .advisory-banner-text { flex: 1; font-size: 12px; color: #bae6fd; line-height: 1.5; }
+    .reboot-banner {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3);
+      border-radius: 8px; padding: 12px 16px; margin-bottom: 12px;
+    }
+    .reboot-banner-icon { font-size: 20px; color: #818cf8; flex-shrink: 0; }
+    .reboot-banner-text { flex: 1; font-size: 12px; color: #c7d2fe; line-height: 1.5; }
+    .banner-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .save-actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
+    .save-actions .action-btn { flex: 1; min-width: 140px; margin-bottom: 0; }
+    .compass-empty { text-align: center; padding: 40px; color: #64748b; font-size: 14px; }
+    .compass-loading { text-align: center; padding: 40px; color: #64748b; font-size: 14px; }
+    .compass-loading::after {
+      content: ''; display: inline-block; width: 12px; height: 12px;
+      margin-left: 8px; border: 2px solid #64748b; border-top-color: #818cf8;
+      border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .hidden { display: none !important; }
+    .badge {
+      display: inline-flex; align-items: center; padding: 2px 8px;
+      border-radius: 10px; font-size: 9px; font-weight: 700; letter-spacing: 0.3px;
+    }
+    .badge-can { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.2); }
+    .badge-spi { background: rgba(14,165,233,0.12); color: #38bdf8; border: 1px solid rgba(14,165,233,0.2); }
+    .badge-i2c { background: rgba(34,197,94,0.12); color: #4ade80; border: 1px solid rgba(34,197,94,0.2); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="topBar">
+      <img src="/logo.png" id="topLogo" alt="SWL">
+    </div>
+    <div id="toolbar">
+      <div class="tb-top">
+        <span class="tb-brand-acronym">
+          <svg viewBox="0 0 28 28" width="22" height="22" class="tb-brand-icon">
+            <defs>
+              <linearGradient id="gcsGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#6366f1"/></linearGradient>
+              <linearGradient id="gcsGrad2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#818cf8"/><stop offset="100%" stop-color="#4f46e5"/></linearGradient>
+            </defs>
+            <circle cx="14" cy="14" r="13" fill="none" stroke="url(#gcsGrad)" stroke-width="1.5" opacity="0.25"/>
+            <circle cx="14" cy="14" r="9" fill="none" stroke="url(#gcsGrad)" stroke-width="1.2" opacity="0.35"/>
+            <circle cx="14" cy="14" r="5" fill="none" stroke="url(#gcsGrad)" stroke-width="1" opacity="0.5"/>
+            <circle cx="14" cy="14" r="2.5" fill="url(#gcsGrad)" opacity="0.8"/>
+            <line x1="14" y1="0" x2="14" y2="6" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="14" y1="22" x2="14" y2="28" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="0" y1="14" x2="6" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <line x1="22" y1="14" x2="28" y2="14" stroke="url(#gcsGrad2)" stroke-width="1.8" stroke-linecap="round" opacity="0.6"/>
+            <path d="M8 5.5c-4 2.5-6 7-6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M20 5.5c4 2.5 6 7 6 11.5" stroke="url(#gcsGrad)" stroke-width="1.5" fill="none" stroke-linecap="round" opacity="0.3"/>
+            <path d="M6 20c2 3 5 5 8 5s6-2 8-5" stroke="url(#gcsGrad)" stroke-width="1.2" fill="none" stroke-linecap="round" opacity="0.25"/>
+          </svg>
+          SGC
+        </span>
+        <span class="tb-software-name">SKYWIN GROUND CONTROL STATION</span>
+      </div>
+      <div class="tb-sep-h"></div>
+      <div class="tb-bottom">
+        <button class="toolbar-back" onclick="location.href='/'" title="Back to Home">&#8592;</button>
+        <div id="tbHamburger" onclick="toggleToolbarMenu()">
+          <span></span><span></span><span></span>
+        </div>
+        <div id="tbMenu">
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📁</span> FILE</div>
+          <button class="tb-menu-btn" onclick="menuAction('New Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📄</span> New Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Open Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📂</span> Open Mission...</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission</button>
+          <button class="tb-menu-btn" onclick="menuAction('Save Mission As');toggleToolbarMenu()"><span class="tb-menu-btn-icon">💾</span> Save Mission As...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Export Log');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📤</span> Export Log...</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('Exit');toggleToolbarMenu()"><span class="tb-menu-btn-icon">🚪</span> Exit</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">🗺️</span> FLIGHT PLAN</div>
+          <button class="tb-menu-btn" onclick="location.href='/plan'"><span class="tb-menu-btn-icon">✈️</span> Waypoints</button>
+          <button class="tb-menu-btn" onclick="location.href='/survey'"><span class="tb-menu-btn-icon">📡</span> Survey Grid</button>
+          <button class="tb-menu-btn" onclick="location.href='/fence'"><span class="tb-menu-btn-icon">🛡️</span> Geo-Fence</button>
+          <button class="tb-menu-btn" onclick="location.href='/rally'"><span class="tb-menu-btn-icon">📍</span> Rally Points</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">⚙️</span> CONFIG</div>
+          <button class="tb-menu-btn" onclick="location.href='/config'"><span class="tb-menu-btn-icon">🔧</span> Calibration</button>
+          <button class="tb-menu-btn" onclick="location.href='/compass'"><span class="tb-menu-btn-icon">🧭</span> Compass</button>
+          <button class="tb-menu-btn" onclick="location.href='/params'"><span class="tb-menu-btn-icon">📋</span> Full Parameters</button>
+          <button class="tb-menu-btn" onclick="location.href='/tuning'"><span class="tb-menu-btn-icon">🎛️</span> Tuning</button>
+          <button class="tb-menu-btn" onclick="location.href='/motor_test'"><span class="tb-menu-btn-icon">🔄</span> Motor Test</button>
+          <button class="tb-menu-btn" onclick="location.href='/rc_override'"><span class="tb-menu-btn-icon">🎮</span> RC Override</button>
+          <div class="tb-menu-sep"></div>
+          <button class="tb-menu-btn" onclick="menuAction('App Settings');toggleToolbarMenu()"><span class="tb-menu-btn-icon">⚙️</span> App Settings...</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">📋</span> LOGS</div>
+          <button class="tb-menu-btn" onclick="menuAction('Telemetry Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📊</span> Telemetry Logs</button>
+          <button class="tb-menu-btn" onclick="menuAction('DataFlash Logs');toggleToolbarMenu()"><span class="tb-menu-btn-icon">📀</span> DataFlash Logs</button>
+          <button class="tb-menu-btn" onclick="toggleConsole();toggleToolbarMenu()"><span class="tb-menu-btn-icon">💻</span> Console</button>
+          <div class="tb-menu-sep"></div>
+          <div class="tb-menu-header"><span class="tb-menu-header-icon">❓</span> HELP</div>
+          <button class="tb-menu-btn" onclick="menuAction('About');toggleToolbarMenu()"><span class="tb-menu-btn-icon">ℹ️</span> About SGC</button>
+        </div>
+        <button id="connectBtn" class="tb-btn tb-connect" onclick="toggleConnection()">&#x25CF; Connect</button>
+        <button id="tlogBtn" class="tb-btn tb-tlog" onclick="toggleTlog()">&#x25CF; DATA LOG</button>
+      </div>
+    </div>
+
+    <div id="main">
+      <div class="compass-wrap" id="compassWrap">
+        <div class="compass-loading" id="compassLoading">Loading compass data...</div>
+
+        <div id="compassContent" class="hidden">
+
+          <div id="compassBanners"></div>
+
+          <div class="compass-section">
+            <h2><span>🧭</span> Compass Priority Table</h2>
+            <p class="sub">Drag rows to reorder compass priority. First row = highest priority.</p>
+            <div id="compassNoData" class="compass-empty hidden">No compasses detected.</div>
+            <table class="compass-table" id="compassTable">
+              <thead>
+                <tr>
+                  <th></th>
+                  <th>Priority</th>
+                  <th>Device Name</th>
+                  <th>Type</th>
+                  <th>Device ID</th>
+                  <th>External</th>
+                  <th>Health</th>
+                  <th>Enabled</th>
+                </tr>
+              </thead>
+              <tbody id="compassTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="compass-section" style="margin-top:12px">
+            <h2><span>✅</span> Enable / Disable Controls</h2>
+            <p class="sub">Toggle which compasses are used for EKF navigation.</p>
+            <div id="enableControls"></div>
+          </div>
+
+          <div class="compass-section" style="margin-top:12px">
+            <h2><span>❤️</span> Health Status</h2>
+            <p class="sub">Real-time magnetometer field strength, offsets, and calibration state.</p>
+            <div class="health-grid" id="healthGrid"></div>
+          </div>
+
+          <div class="compass-section" style="margin-top:12px">
+            <h2><span>💡</span> Recommendations</h2>
+            <p class="sub">Automated suggestions based on current compass configuration.</p>
+            <div id="recommendations"></div>
+          </div>
+
+          <div class="compass-section" style="margin-top:12px">
+            <h2><span>💾</span> Save / Reboot</h2>
+            <p class="sub">Apply compass configuration changes to the flight controller.</p>
+            <div class="save-actions">
+              <button class="action-btn success" onclick="saveCompassConfig()" id="saveBtn">💾 Save Configuration</button>
+              <button class="action-btn warning hidden" onclick="rebootFcu()" id="rebootNowBtn">🔄 Reboot Now</button>
+              <button class="action-btn" onclick="refreshCompassData()" id="refreshBtn">🔄 Refresh</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <div id="consolePanel" class="console-panel" style="display:flex">
+      <div class="rc-header">
+        <span>CONSOLE</span>
+      </div>
+      <div id="consoleOutput"></div>
+    </div>
+
+    <div id="statusbar">
+      <span id="statusMessage">Compass Configuration</span>
+    </div>
+  </div>
+
+  <div id="notifContainer"></div>
+  <script src="/static/lib/socket.io.min.js" onerror="this.onerror=null;this.src='https://cdn.socket.io/4.7.2/socket.io.min.js'"></script>
+  <script src="/static/js/toolbar.js?v=13"></script>
+  <script src="/static/js/app.js?v=13"></script>
+  <script src="/static/js/compass.js?v=1"></script>
+</body>
+</html>
