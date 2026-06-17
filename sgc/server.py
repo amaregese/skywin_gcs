@@ -7,6 +7,7 @@ from flask_socketio import SocketIO, emit
 
 from sgc.communication.connection_manager import MAVLinkConnection
 from sgc.gui.param_defs import get_metadata
+from sgc.firmware.routes import firmware_bp, init_firmware_module
 
 app = Flask(__name__, static_folder="gui/static", template_folder="gui/templates")
 app.config["SECRET_KEY"] = "sgc-secret"
@@ -20,6 +21,10 @@ _last_fence = None    # last downloaded fence data
 _last_rally = None    # last downloaded rally data
 _log_buffer = []  # last 200 log messages
 _startup_done = False
+
+# Register firmware blueprint
+app.register_blueprint(firmware_bp)
+init_firmware_module(socketio)
 
 
 def _broadcast(event, data):
