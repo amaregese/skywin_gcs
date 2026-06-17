@@ -515,6 +515,25 @@ class MAVLinkConnection:
             else:
                 self._emit("log", {"message": f"{text}", "level": severity})
 
+        elif msg_type in ("SCALED_IMU", "SCALED_IMU2", "SCALED_IMU3"):
+            idx = 0
+            if msg_type == "SCALED_IMU2":
+                idx = 1
+            elif msg_type == "SCALED_IMU3":
+                idx = 2
+            xmag = getattr(msg, 'xmag', 0)
+            ymag = getattr(msg, 'ymag', 0)
+            zmag = getattr(msg, 'zmag', 0)
+            field_strength = math.sqrt(xmag * xmag + ymag * ymag + zmag * zmag) / 1000.0
+            self._emit("compass_health", {
+                "index": idx,
+                "xmag": xmag,
+                "ymag": ymag,
+                "zmag": zmag,
+                "field_strength": round(field_strength, 2),
+                "temperature": getattr(msg, 'temperature', 0),
+            })
+
         elif msg_type == "MAG_CAL_PROGRESS":
             self._emit("mag_cal_progress", {
                 "compass_id": getattr(msg, 'compass_id', 0),

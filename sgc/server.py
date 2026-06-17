@@ -83,6 +83,139 @@ def survey_page():
 def config_page():
     return render_template("config.html")
 
+@app.route("/compass")
+def compass_page():
+    return render_template("compass.html")
+
+
+# ---- Compass detection helpers ----
+
+COMPASS_DEVICE_NAMES = {
+    (0, 0x1E): "HMC5883",
+    (0, 0x1D): "LSM303D",
+    (0, 0x1C): "LSM9DS1",
+    (0, 0x0C): "AK8963",
+    (0, 0x0D): "AK8963",
+    (0, 0x0E): "AK8963",
+    (0, 0x30): "IST8310",
+    (0, 0x0F): "MAG3110",
+    (0, 0x10): "MMC5983MA",
+    (0, 0x13): "VCM1193L",
+    (1, 0x01): "LSM303D",
+    (1, 0x02): "AK8963",
+    (1, 0x03): "LSM9DS1",
+    (1, 0x05): "IST8310",
+    (1, 0x06): "MAG3110",
+    (1, 0x07): "MMC5983MA",
+    (1, 0x08): "HMC5883",
+    (2, 0): "UAVCAN Compass",
+    (3, 0): "DroneCAN Compass",
+}
+
+COMPASS_KNOWN_IDS = {
+    262178: ("LSM303D", 1, 0x01),
+    346114: ("AK8963", 1, 0x02),
+    262158: ("LSM303D", 0, 0x1D),
+    125: ("UAVCAN Compass", 2, 0),
+}
+
+
+def _decode_compass_dev_id(dev_id):
+    if dev_id in COMPASS_KNOWN_IDS:
+        name, bus_type_val, addr = COMPASS_KNOWN_IDS[dev_id]
+        bus_type = {1: "SPI", 2: "UAVCAN", 3: "DroneCAN", 0: "I2C"}.get(bus_type_val, f"Unknown({bus_type_val})")
+        return {"name": name, "bus_type": bus_type, "address": addr, "raw": dev_id}
+
+    bus_type_val = (dev_id >> 12) & 0x0F
+    bus = (dev_id >> 8) & 0x0F
+    address = dev_id & 0xFF
+    bus_type = {0: "I2C", 1: "SPI", 2: "UAVCAN", 3: "DroneCAN"}.get(bus_type_val, f"Unknown({bus_type_val})")
+    name = COMPASS_DEVICE_NAMES.get((bus_type_val, address),
+             COMPASS_DEVICE_NAMES.get((bus_type_val, 0),
+             f"Compass {dev_id}"))
+    return {"name": name, "bus_type": bus_type, "address": address, "raw": dev_id}
+
+
+def _get_compass_params(conn):
+    compasses = []
+    for i in range(1, 4):
+        dev_id_name = f"COMPASS_DEV_ID{i if i > 1 else ''}"
+        use_name = f"COMPASS_USE{i if i > 1 else ''}"
+        ext_name = f"COMPASS_EXTERNAL{i if i > 1 else ''}"
+        prio_name = f"COMPASS_PRIO{i}_ID"
+
+        dev_id = conn.params.get(dev_id_name, {}).get("value", 0)
+        use_val = conn.params.get(use_name, {}).get("value", 0)
+        ext_val = conn.params.get(ext_name, {}).get("value", 0)
+
+        if dev_id == 0:
+            continue
+
+        info = _decode_compass_dev_id(int(dev_id))
+        compasses.append({
+            "id": int(dev_id),
+            "index": i,
+            "name": info["name"],
+            "bus_type": info["bus_type"],
+            "external": bool(int(ext_val)),
+            "enabled": bool(int(use_val)),
+            "healthy": True,
+            "priority": i,
+        })
+
+    priority_map = {}
+    for i in range(1, 4):
+        prio_name = f"COMPASS_PRIO{i}_ID"
+        prio_id = conn.params.get(prio_name, {}).get("value", 0)
+        if int(prio_id) > 0:
+            priority_map[int(prio_id)] = i
+
+    for c in compasses:
+        if c["id"] in priority_map:
+            c["priority"] = priority_map[c["id"]]
+
+    compasses.sort(key=lambda c: c["priority"])
+
+    return compasses
+
+
+@app.route("/api/compass/list")
+def api_compass_list():
+    if not _connection or not _connection.running:
+        return jsonify({"compasses": [], "error": "Not connected"})
+    try:
+        compasses = _get_compass_params(_connection)
+        return jsonify({"compasses": compasses})
+    except Exception as e:
+        return jsonify({"compasses": [], "error": str(e)})
+
+
+@app.route("/api/compass/update", methods=["POST"])
+def api_compass_update():
+    if not _connection or not _connection.running:
+        return jsonify({"success": False, "error": "Not connected"}), 400
+    data = request.get_json()
+    if not data:
+        return jsonify({"success": False, "error": "No data"}), 400
+
+    priorities = data.get("priorities", [])
+    enabled_ids = data.get("enabled", [])
+
+    try:
+        for i, dev_id in enumerate(priorities[:3]):
+            prio_name = f"COMPASS_PRIO{i + 1}_ID"
+            _connection.set_param(prio_name, float(dev_id))
+
+        for i in range(1, 4):
+            dev_id_name = f"COMPASS_DEV_ID{i if i > 1 else ''}"
+            use_name = f"COMPASS_USE{i if i > 1 else ''}"
+            actual_dev = int(_connection.params.get(dev_id_name, {}).get("value", 0))
+            _connection.set_param(use_name, 1.0 if actual_dev in enabled_ids else 0.0)
+
+        return jsonify({"success": True, "reboot_required": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route("/api/params/snapshot")
 def params_snapshot():
@@ -610,6 +743,8 @@ def _on_mavlink_event(event, data):
         _broadcast("rally_data", data)
     elif event == "rally_upload_complete":
         _broadcast("rally_upload_complete", data)
+    elif event == "compass_health":
+        _broadcast("compass_health", data)
 
 
 @socketio.on("request_mission")

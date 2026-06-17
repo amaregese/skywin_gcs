@@ -89,6 +89,7 @@
           <div class="tb-menu-sep"></div>
           <div class="tb-menu-header"><span class="tb-menu-header-icon">⚙️</span> CONFIG</div>
           <button class="tb-menu-btn" onclick="location.href='/config'"><span class="tb-menu-btn-icon">🔧</span> Calibration</button>
+          <button class="tb-menu-btn" onclick="location.href='/compass'"><span class="tb-menu-btn-icon">🧭</span> Compass</button>
           <button class="tb-menu-btn" onclick="location.href='/params'"><span class="tb-menu-btn-icon">📋</span> Full Parameters</button>
           <button class="tb-menu-btn" onclick="location.href='/tuning'"><span class="tb-menu-btn-icon">🎛️</span> Tuning</button>
           <button class="tb-menu-btn" onclick="location.href='/motor_test'"><span class="tb-menu-btn-icon">🔄</span> Motor Test</button>
@@ -155,6 +156,7 @@
           <h2 style="font-size:13px;font-weight:700;color:#e2e8f0;margin:0 0 8px">Vehicle</h2>
           <button class="action-btn warning" onclick="rebootFcu()" style="width:100%;margin-bottom:8px">&#x21bb; Reboot Autopilot</button>
           <button class="action-btn" onclick="enableCompassLearn()" style="width:100%;margin-bottom:8px">&#x26C5; Enable Compass Learn (COMPASS_LEARN=2)</button>
+          <button class="action-btn" onclick="location.href='/compass'" style="width:100%;margin-bottom:8px">&#x1F9ED; Compass Priority & Configuration</button>
           <p style="font-size:10px;color:#64748b;margin:6px 0 0">Sends a reboot command to the flight controller. Reconnect is automatic.</p>
         </div>
       </div>
