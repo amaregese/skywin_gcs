@@ -69,6 +69,39 @@ function menuAction(action) {
   }
 }
 
+/* ── Simplified hamburger menu ── */
+/* Only main section headers; sub-items rendered inside the main page body */
+
+var MENU_SECTIONS = [
+  { icon: '\uD83D\uDCC1', label: 'FILE', action: 'File' },
+  { icon: '\uD83D\uDDFA\uFE0F', label: 'FLIGHT PLAN', url: '/plan' },
+  { icon: '\u2699\uFE0F', label: 'CONFIG', url: '/config' },
+  { icon: '\u26A1', label: 'FIRMWARE', url: '/firmware' },
+  { icon: '\uD83D\uDCCB', label: 'LOGS', action: 'Logs' },
+  { icon: '\u2753', label: 'HELP', action: 'About' },
+];
+
+function renderToolbarMenu() {
+  var menu = document.getElementById('tbMenu');
+  if (!menu) return;
+  menu.innerHTML = '';
+  MENU_SECTIONS.forEach(function (section) {
+    var btn = document.createElement('button');
+    btn.className = 'tb-menu-btn tb-menu-section';
+    if (section.url) {
+      btn.onclick = function () { location.href = section.url; closeToolbarMenu(); };
+    } else if (section.action === 'File') {
+      btn.onclick = function () { closeToolbarMenu(); openMissionFile(); };
+    } else if (section.action === 'Logs') {
+      btn.onclick = function () { closeToolbarMenu(); toggleConsole(); };
+    } else if (section.action) {
+      btn.onclick = function () { menuAction(section.action); closeToolbarMenu(); };
+    }
+    btn.innerHTML = '<span class="tb-menu-btn-icon">' + (section.icon || '') + '</span> ' + section.label;
+    menu.appendChild(btn);
+  });
+}
+
 /* Hamburger toolbar menu — hover + click with slide animation */
 function toggleToolbarMenu() {
   var menu = document.getElementById('tbMenu');
@@ -108,6 +141,7 @@ function cancelHideToolbarMenu() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  renderToolbarMenu();
   var hamburger = document.getElementById('tbHamburger');
   var menu = document.getElementById('tbMenu');
   if (hamburger && menu) {

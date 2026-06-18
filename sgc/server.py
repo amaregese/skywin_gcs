@@ -13,6 +13,9 @@ app = Flask(__name__, static_folder="gui/static", template_folder="gui/templates
 app.config["SECRET_KEY"] = "sgc-secret"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+app.register_blueprint(firmware_bp)
+init_firmware_module(socketio)
+
 _connection = None
 _connection_lock = threading.Lock()
 _pending_reboot_conn = None  # (conn_str, baud) saved before reboot
@@ -21,10 +24,6 @@ _last_fence = None    # last downloaded fence data
 _last_rally = None    # last downloaded rally data
 _log_buffer = []  # last 200 log messages
 _startup_done = False
-
-# Register firmware blueprint
-app.register_blueprint(firmware_bp)
-init_firmware_module(socketio)
 
 
 def _broadcast(event, data):
